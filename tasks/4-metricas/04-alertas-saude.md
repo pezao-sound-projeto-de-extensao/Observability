@@ -29,3 +29,49 @@ Os alertas disparam quando o lab é parado: silenciar no fim de cada sessão.
 ## Pronto quando
 
 Parar o Loki por 5 min dispara alerta no webhook.
+
+## Métricas do Fluent Bit 3.2 (levantadas na task 1.4, 2026-10-28)
+
+Todas chegam com a label `host` (`add_label`). Para os alertas: `fluentbit_output_retries_total`, `fluentbit_output_retries_failed_total`, `fluentbit_output_dropped_records_total`, `fluentbit_storage_fs_chunks` (chunks em buffer no disco).
+
+<details><summary>Lista completa</summary>
+
+```text
+fluentbit_build_info
+fluentbit_filter_add_records_total
+fluentbit_filter_bytes_total
+fluentbit_filter_drop_bytes_total
+fluentbit_filter_drop_records_total
+fluentbit_filter_records_total
+fluentbit_hot_reloaded_times
+fluentbit_input_bytes_total
+fluentbit_input_ingestion_paused
+fluentbit_input_metrics_scrapes_total
+fluentbit_input_records_total
+fluentbit_input_storage_chunks
+fluentbit_input_storage_chunks_busy
+fluentbit_input_storage_chunks_busy_bytes
+fluentbit_input_storage_chunks_down
+fluentbit_input_storage_chunks_up
+fluentbit_input_storage_memory_bytes
+fluentbit_input_storage_overlimit
+fluentbit_output_chunk_available_capacity_percent
+fluentbit_output_dropped_records_total
+fluentbit_output_errors_total
+fluentbit_output_proc_bytes_total
+fluentbit_output_proc_records_total
+fluentbit_output_retried_records_total
+fluentbit_output_retries_failed_total
+fluentbit_output_retries_total
+fluentbit_output_upstream_busy_connections
+fluentbit_output_upstream_total_connections
+fluentbit_process_start_time_seconds
+fluentbit_storage_chunks
+fluentbit_storage_fs_chunks
+fluentbit_storage_fs_chunks_down
+fluentbit_storage_fs_chunks_up
+fluentbit_storage_mem_chunks
+fluentbit_uptime
+```
+
+</details>
