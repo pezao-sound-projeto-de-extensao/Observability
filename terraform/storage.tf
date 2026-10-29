@@ -1,16 +1,24 @@
-resource "aws_s3_bucket" "buckets" {
-  for_each = toset(["loki-logs", "logs-raw", "tempo-traces", "mimir-metrics", "pyroscope-profiles"])
+locals {
+  buckets = { for b in ["loki-logs", "logs-raw", "tempo-traces", "mimir-metrics", "pyroscope-profiles"] :
+  b => "${b}-${data.aws_caller_identity.current.account_id}" }
+}
 
-  bucket        = "${each.key}-${data.aws_caller_identity.current.account_id}"
-  force_destroy = true
+resource "terraform_data" "buckets" {
+  for_each = local.buckets
+  input    = each.value
 
-  tags = {
-    Name = each.key
+  provisioner "local-exec" {
+    command = "aws s3api create-bucket --bucket ${self.input}"
+  }
+
+  provisioner "local-exec" {
+    when    = destroy
+    command = "aws s3 rb s3://${self.input} --force"
   }
 }
 
 resource "aws_s3_bucket_lifecycle_configuration" "logs_raw" {
-  bucket = aws_s3_bucket.buckets["logs-raw"].id
+  bucket = terraform_data.buckets["logs-raw"].output
 
   rule {
     id     = "expira-30-dias"

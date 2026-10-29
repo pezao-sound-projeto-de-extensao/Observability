@@ -15,7 +15,7 @@ resource "local_file" "ansible_vars" {
 
   content = yamlencode({
     aws_region = var.aws_region
-    buckets    = { for k, b in aws_s3_bucket.buckets : k => b.bucket }
+    buckets    = { for k, b in terraform_data.buckets : k => b.output }
   })
 }
 
