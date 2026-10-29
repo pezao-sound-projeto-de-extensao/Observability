@@ -1,0 +1,32 @@
+name: auto-pr.yml
+
+on:
+  push:
+    branches-ignore:
+      - main
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  open-pr:
+    runs-on: ubuntu-latest
+    if: ${{ !github.event.deleted }}
+    steps:
+      - name: Abrir PR para development (ou main, se vier da development)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          HEAD: ${{ github.ref_name }}
+          BASE: ${{ github.ref_name == 'development' && 'main' || 'development' }}
+        run: |
+          if [ "$(gh api "repos/$GH_REPO/compare/$BASE...$HEAD" -q .ahead_by)" = "0" ]; then
+            echo "Sem commits novos em $HEAD em relação a $BASE"
+            exit 0
+          fi
+          if [ -n "$(gh pr list --head "$HEAD" --base "$BASE" -q '.[].number' --json number)" ]; then
+            echo "PR $HEAD -> $BASE já existe"
+            exit 0
+          fi
+          gh pr create --head "$HEAD" --base "$BASE" --title "$HEAD -> $BASE" --body "PR aberto automaticamente."
