@@ -1,0 +1,205 @@
+// Containers: Fluent Bit -> Alloy. As 4 labels já chegam prontas.
+loki.source.api "fluentbit" {
+  http {
+    listen_address = "0.0.0.0"
+    listen_port    = 3500
+  }
+  use_incoming_timestamp = true
+  forward_to             = [loki.write.default.receiver, otelcol.receiver.loki.raw.receiver]
+}
+
+loki.write "default" {
+  endpoint {
+    url                 = "http://loki:3100/loki/api/v1/push"
+    max_backoff_retries = 0 // tenta indefinidamente enquanto o Loki reinicia
+  }
+}
+
+otelcol.receiver.loki "raw" {
+  output {
+    logs = [otelcol.processor.batch.raw_containers.input]
+  }
+}
+
+// RDS e WAF: polling direto na API do CloudWatch.
+// Sem storage e com 60 s de propósito: o checkpoint e janelas curtas perdem eventos que chegam atrasados (task 2.4).
+otelcol.receiver.awscloudwatch "rds" {
+  region = "{{ aws_region }}"
+
+  logs {
+    poll_interval = "60s"
+
+    groups {
+      named {
+        group_name = "/aws/rds/instance/app-db/error"
+      }
+      named {
+        group_name = "/aws/rds/instance/app-db/slowquery"
+      }
+    }
+  }
+
+  output {
+    logs = [otelcol.processor.attributes.rds.input]
+  }
+}
+
+otelcol.receiver.awscloudwatch "waf" {
+  region = "{{ aws_region }}"
+
+  logs {
+    poll_interval = "60s"
+
+    groups {
+      named {
+        group_name = "aws-waf-logs-main-alb-waf"
+      }
+    }
+  }
+
+  output {
+    logs = [otelcol.processor.attributes.waf.input]
+  }
+}
+
+otelcol.processor.attributes "rds" {
+  action {
+    key    = "env"
+    action = "insert"
+    value  = "production"
+  }
+  action {
+    key    = "origin"
+    action = "insert"
+    value  = "rds-logs"
+  }
+  action {
+    key    = "service"
+    action = "insert"
+    value  = "rds"
+  }
+  action {
+    key    = "host"
+    action = "insert"
+    value  = "app-db"
+  }
+  action {
+    key    = "loki.attribute.labels"
+    action = "insert"
+    value  = "env, origin, service, host"
+  }
+  // Linha igual à original, sem o envelope JSON padrão do exporter
+  action {
+    key    = "loki.format"
+    action = "insert"
+    value  = "raw"
+  }
+
+  output {
+    logs = [otelcol.exporter.loki.cloudwatch.input, otelcol.processor.batch.raw_rds.input]
+  }
+}
+
+otelcol.processor.attributes "waf" {
+  action {
+    key    = "env"
+    action = "insert"
+    value  = "production"
+  }
+  action {
+    key    = "origin"
+    action = "insert"
+    value  = "waf-logs"
+  }
+  action {
+    key    = "service"
+    action = "insert"
+    value  = "waf"
+  }
+  action {
+    key    = "host"
+    action = "insert"
+    value  = "main-alb"
+  }
+  action {
+    key    = "loki.attribute.labels"
+    action = "insert"
+    value  = "env, origin, service, host"
+  }
+  action {
+    key    = "loki.format"
+    action = "insert"
+    value  = "raw"
+  }
+
+  output {
+    logs = [otelcol.exporter.loki.cloudwatch.input, otelcol.processor.batch.raw_waf.input]
+  }
+}
+
+otelcol.exporter.loki "cloudwatch" {
+  forward_to = [loki.process.cloudwatch.receiver]
+}
+
+// O exporter acrescenta a label "exporter"; ficam só as 4 combinadas
+loki.process "cloudwatch" {
+  stage.label_drop {
+    values = ["exporter"]
+  }
+  forward_to = [loki.write.default.receiver]
+}
+
+// Arquivo bruto. O batch evita um objeto no S3 a cada push e fica fora do caminho do Live Tail.
+otelcol.processor.batch "raw_containers" {
+  timeout = "60s"
+  output {
+    logs = [otelcol.exporter.awss3.containers.input]
+  }
+}
+
+otelcol.processor.batch "raw_rds" {
+  timeout = "60s"
+  output {
+    logs = [otelcol.exporter.awss3.rds.input]
+  }
+}
+
+otelcol.processor.batch "raw_waf" {
+  timeout = "60s"
+  output {
+    logs = [otelcol.exporter.awss3.waf.input]
+  }
+}
+
+otelcol.exporter.awss3 "containers" {
+  s3_uploader {
+    region    = "{{ aws_region }}"
+    s3_bucket = "{{ buckets['logs-raw'] }}"
+    s3_prefix = "origin=container-logs"
+  }
+  marshaler {
+    type = "body"
+  }
+}
+
+otelcol.exporter.awss3 "rds" {
+  s3_uploader {
+    region    = "{{ aws_region }}"
+    s3_bucket = "{{ buckets['logs-raw'] }}"
+    s3_prefix = "origin=rds-logs"
+  }
+  marshaler {
+    type = "body"
+  }
+}
+
+otelcol.exporter.awss3 "waf" {
+  s3_uploader {
+    region    = "{{ aws_region }}"
+    s3_bucket = "{{ buckets['logs-raw'] }}"
+    s3_prefix = "origin=waf-logs"
+  }
+  marshaler {
+    type = "body"
+  }
+}

@@ -1,0 +1,21 @@
+# /-/reload em vez de restart: um restart do Alloy interrompe todos os sinais
+- name: Recarregar Alloy
+  ansible.builtin.uri:
+    url: http://localhost:12345/-/reload
+    method: POST
+  register: alloy_reload
+  until: alloy_reload.status == 200
+  retries: 10
+  delay: 3
+
+- name: Reiniciar Loki
+  ansible.builtin.command:
+    cmd: docker compose restart loki
+    chdir: "{{ observability_dir }}"
+  changed_when: true
+
+- name: Reiniciar Grafana
+  ansible.builtin.command:
+    cmd: docker compose restart grafana
+    chdir: "{{ observability_dir }}"
+  changed_when: true
