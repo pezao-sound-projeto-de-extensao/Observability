@@ -1,0 +1,24 @@
+- name: Instalar Docker
+  ansible.builtin.dnf:
+    name: docker
+    state: present
+
+- name: Criar pasta de plugins do Docker
+  ansible.builtin.file:
+    path: /usr/local/lib/docker/cli-plugins
+    state: directory
+    mode: "0755"
+
+# O dnf do Amazon Linux não traz o plugin Compose
+- name: Instalar plugin Compose
+  ansible.builtin.get_url:
+    url: "https://github.com/docker/compose/releases/download/{{ compose_version }}/docker-compose-linux-x86_64"
+    checksum: "sha256:https://github.com/docker/compose/releases/download/{{ compose_version }}/checksums.txt"
+    dest: /usr/local/lib/docker/cli-plugins/docker-compose
+    mode: "0755"
+
+- name: Habilitar Docker no boot
+  ansible.builtin.systemd_service:
+    name: docker
+    enabled: true
+    state: started
