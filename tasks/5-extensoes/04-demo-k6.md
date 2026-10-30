@@ -13,7 +13,7 @@
 | 0. Frontend | Navegar no frontend antes do k6 | Trace de `frontend` até o `SELECT` (Faro) |
 | 1. Normal | `k6 run demo.js` | Live Tail, RED estável, service graph, waterfall, flame graph do span (Profiles) |
 | 2. Falha na fila | `docker service scale stockflow_rabbitmq=0` no `app-1` + `POST /api/auth/esqueci-senha` | `ERROR` → `trace_id` → span do RabbitMQ; exemplar no pico do p95; padrão novo no Logs Drilldown. Depois `=1` |
-| 3. Ataque | `k6 run --vus 30 --duration 1m` | 429 no k6; `{origin="waf-logs"} \|= "BLOCK"` ~10–15 s depois |
+| 3. Ataque | `k6 run --vus 30 --duration 1m` | 429 no k6; `{origin="waf-logs"} \|= "BLOCK"` até ~1,5 min depois |
 
 ## Restrições do WAF
 

@@ -12,7 +12,7 @@
 
 ## Pronto quando
 
-Em **Explore → Loki → Live**, dados chegando em ~1–3 s (containers) e ~10–15 s (RDS/WAF):
+Em **Explore → Loki → Live**, dados chegando em ~1–3 s (containers) e até ~1,5 min (RDS/WAF, task 2.4):
 
 ```logql
 {env="production"}

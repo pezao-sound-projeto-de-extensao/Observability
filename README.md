@@ -110,7 +110,7 @@ O Grafana consulta o Loki, o Tempo e o Mimir (a stack LGTM: Loki, Grafana, Tempo
 |---|---|
 | Sem barramento de logs | O Fluent Bit envia direto ao Alloy, e a durabilidade vem do buffer em disco do Fluent Bit. Um barramento na mesma EC2 do consumidor cairia junto com ele e não protegeria nada. Kinesis (com Logstash) e Redpanda foram avaliados e descartados |
 | Alloy como ponto único de processamento de logs | Coletor da própria Grafana, sem JVM nem plugins extras: recebe os logs dos containers pela API de push do Loki, lê RDS/WAF no CloudWatch, define labels e timestamp e grava no Loki e no arquivo bruto. O Loki, sem autenticação, não fica exposto aos nós app |
-| Alloy lendo RDS e WAF no CloudWatch (polling) | Sem Subscription Filter, Kinesis ou Lambda. Troca alguns segundos de atraso (polling de 10 s) por menos infraestrutura |
+| Alloy lendo RDS e WAF no CloudWatch (polling) | Sem Subscription Filter, Kinesis ou Lambda. Troca ~1 min de atraso (polling de 60 s, seção 4.3) por menos infraestrutura |
 | Arquivo bruto no S3 pelo Alloy | Os chunks do Loki só são legíveis pelo Loki. O Alloy grava as linhas originais por origem, consultáveis pelo Athena (seção 4.4) |
 | Tempo para traces | Backend open source de tracing, com armazenamento em S3 e integração nativa com Grafana |
 | Alloy também para traces e métricas, sem OTel Collector | Um só coletor para os três sinais: recebe o OTLP dos backends (`:4318`), descarta os spans de health check, envia traces ao Tempo e métricas ao Mimir, com fila e retry nos exporters durante reinícios, e é onde entraria tail sampling. Em troca, um restart do Alloy interrompe os três sinais ao mesmo tempo, e a flag `--stability.level=experimental` (exigida pelos componentes de logs) vale para o processo todo (seção 6.6) |
@@ -195,18 +195,19 @@ logging.structured.format.console=logstash
 RDS e WAF já exportam para o CloudWatch Logs. O Alloy lê os log groups direto pela API do CloudWatch (`otelcol.receiver.awscloudwatch`), sem Subscription Filter, Kinesis ou Lambda.
 
 ```text
-RDS ──> CloudWatch Logs <──(polling, 10 s)── Alloy
-WAF ──> CloudWatch Logs <──(polling, 10 s)── Alloy
+RDS ──> CloudWatch Logs <──(polling, 60 s)── Alloy
+WAF ──> CloudWatch Logs <──(polling, 60 s)── Alloy
 ```
 
 - Um receiver por origem, com os log groups por nome (bloco `named`), de modo que a origem é fixa no pipeline:
   - `/aws/rds/instance/app-db/error` e `/slowquery` → `origin="rds-logs"`
   - `aws-waf-logs-main-alb-waf` → `origin="waf-logs"`
-- `poll_interval = "10s"` (o padrão é 1 min), que define o atraso desses logs (seção 4.5).
-- **Retomada:** o estado do receiver vai para um `otelcol.storage.file` em volume no EBS. A documentação não diz o que fica salvo, então é preciso validar, parando a EC2, se ele retoma de onde parou. Se não retomar, `initial_lookback` define quanto ele lê para trás na primeira coleta. O teto é a retenção dos log groups (3 dias).
-- **Timestamp:** usar o horário do evento no CloudWatch, não o da leitura. A documentação também não descreve esse mapeamento, então ele precisa ser conferido no mesmo teste.
+- `poll_interval = "60s"` (o padrão), que define o atraso desses logs (seção 4.5). Intervalos curtos não funcionam: o receiver não tem margem para eventos que chegam atrasados ao CloudWatch, e o WAF entrega de 7 a 24 s depois. Com 10 s, o teste no lab leu 0 de 24 eventos.
+- **Sem checkpoint:** o receiver não usa `otelcol.storage.file`. Com ele, a janela sempre pula para o horário atual e o teste perdeu 7 de 36 eventos; sem ele, leu 50 de 50. Um evento isolado no fim de uma janela vazia ainda pode se perder.
+- **Retomada:** ao iniciar, o receiver relê o log group inteiro (até 3 dias de retenção). O Loki não duplica o que já tem, mas recusa o que tiver mais de 1 h em relação ao log mais novo do stream, o que incrementa `loki_write_dropped_entries_total`. O arquivo bruto recebe tudo de novo, então o Athena precisa de `SELECT DISTINCT`. Detalhes na task 2.4.
+- **Timestamp:** o Loki recebe o horário do evento no CloudWatch, não o da leitura (conferido no lab).
 - **Experimental:** o componente exige `--stability.level=experimental` no Alloy e pode mudar entre versões. Fixar a versão da imagem.
-- **IAM:** `logs:FilterLogEvents`, `logs:DescribeLogGroups` e `logs:DescribeLogStreams` pela `LabRole`. Ainda não validado no policy simulator.
+- **IAM:** `logs:FilterLogEvents`, `logs:DescribeLogGroups` e `logs:DescribeLogStreams` pela `LabRole`. A leitura funcionou no lab, sem usar o policy simulator.
 
 ### 4.4 Processamento no Alloy e envio ao Loki
 
@@ -241,7 +242,7 @@ loki.write "default" {
 
 **Retentativas:** por padrão, o `loki.write` tenta 10 vezes (backoff de 500 ms a 5 min) e depois **descarta** (`loki_write_dropped_bytes_total`). Com `max_backoff_retries = 0`, ele tenta até o Loki voltar. O que estiver pendente fica em memória no Alloy, então um restart do próprio Alloy perde esses registros. O WAL do `loki.write` resolveria, mas é experimental e fica desligado. É um risco aceito: a janela é a de um restart, já que, com o Alloy fora do ar, quem acumula é o buffer em disco do Fluent Bit.
 
-**Arquivo bruto:** `otelcol.receiver.loki` → `otelcol.exporter.awss3` (experimental) grava no bucket `logs-raw` com o marshaler `body`, ou seja, só a linha original. Há um prefixo por origem (`origin=container-logs/`, `origin=waf-logs/`, `origin=rds-logs/`) e o particionamento padrão por tempo (`year=/month=/day=/hour=/minute=`). Containers e WAF ficam em JSON por linha, e RDS em texto, com uma tabela do Athena por origem. Falta validar que o marshaler `body` grava uma linha por registro. Os arquivos são independentes do Loki.
+**Arquivo bruto:** `otelcol.receiver.loki` → `otelcol.exporter.awss3` (experimental) grava no bucket `logs-raw` com o marshaler `body`, ou seja, só a linha original. Há um prefixo por origem (`origin=container-logs/`, `origin=waf-logs/`, `origin=rds-logs/`) e o particionamento padrão por tempo (`year=/month=/day=/hour=/minute=`). Containers e WAF ficam em JSON por linha, e RDS em texto, com uma tabela do Athena por origem. O marshaler `body` grava uma linha por registro (validado no lab), mas um registro de slow query do RDS tem várias linhas. Os arquivos são independentes do Loki.
 
 O Loki persiste os logs no Amazon S3.
 
@@ -282,7 +283,7 @@ O Fluent Bit só considera um chunk entregue quando o Alloy responde 2xx. Em cas
 | Loki → Grafana (tail) | menos de 1 s |
 | **Total** | **~1–3 s** |
 
-**Latência de RDS e WAF:** o atraso de entrega do próprio serviço ao CloudWatch (não medido na PoC), mais até 10 s de polling e até 1 s de lote, ou seja, **~10–15 s** além do atraso do CloudWatch. Esse é o custo de não ter Subscription Filter: com o Kinesis, eram segundos.
+**Latência de RDS e WAF:** o atraso de entrega do próprio serviço ao CloudWatch (no lab, 7 a 24 s no WAF), mais até 60 s de polling e até 1 s de lote, ou seja, **até ~1,5 min**. Esse é o custo de não ter Subscription Filter: com o Kinesis, eram segundos.
 
 ### 4.6 Live Tail
 
@@ -580,10 +581,10 @@ No security group do ALB, a porta `3000` é liberada apenas para os IPs da equip
 | `alloy` | 768 MB | Logs, traces e métricas: recebe, filtra e repassa; sem JVM |
 | `loki` | 1 GB | Monolítico, volume baixo |
 | `tempo` | 1 GB | Monolítico, volume baixo |
-| `grafana` | 256 MB | Leve; só consulta Loki, Tempo e Mimir |
+| `grafana` | 512 MB | Só consulta Loki, Tempo e Mimir, mas o Grafana 13.3 sofreu OOM com 256 MB ao subir; estabilizou em ~360 MB |
 | `mimir` | 1 GB | Monolítico, poucas séries (4 backends); medir sob carga real (no teste local, vazio, usou ~45 MB) |
 | `pyroscope` | 768 MB | Monolítico; profiles de 4 backends (seção 18.4) |
-| **Total** | **~4,75 GB** | |
+| **Total** | **~5 GB** | |
 
 Recomendação: **`t3.large`** (2 vCPU, 8 GB), com folga para picos e cache do sistema. Uma `t3.medium` (4 GB) não comporta: a soma dos limites já ocupa toda a memória. O Grafana não pesa: dá para mantê-lo na mesma EC2 sem impacto.
 
@@ -611,7 +612,7 @@ Ambos rodam em **modo monolítico**: um único processo com ingestão, consulta 
 - **Ponto único de falha:** se a EC2 cair, logs, traces e métricas param. Os logs dos containers ficam no buffer em disco do Fluent Bit (até `storage.total_limit_size` por nó) e os de RDS/WAF ficam no CloudWatch (3 dias). Os dois chegam quando a EC2 volta. Spans e métricas enviados durante a queda são perdidos.
 - **Alloy como coletor único:** um restart do Alloy, por exemplo ao mudar a config, interrompe logs, traces e métricas ao mesmo tempo. Os logs dos containers ficam no buffer do Fluent Bit, e os de RDS/WAF no CloudWatch. Spans e métricas enviados durante o restart podem se perder. Por isso, mudanças de config devem ser recarregadas sem derrubar o processo (`/-/reload`), não com restart do container.
 - **WAL e caches** do Loki, do Tempo e do Mimir (TSDB das últimas horas, antes de subir o bloco ao S3) ficam no EBS, então sobrevivem a restart e reboot.
-- **Sessão do lab:** ao fim da sessão, as EC2 são paradas. Ao reiniciar, os containers sobem com `restart: unless-stopped`, o Fluent Bit reenvia o que ficou no buffer em disco e o Alloy retoma a leitura do CloudWatch, com o horário original de cada evento (seções 4.2 a 4.4). A retomada do CloudWatch ainda precisa ser validada (seção 4.3).
+- **Sessão do lab:** ao fim da sessão, as EC2 são paradas. Ao reiniciar, os containers sobem com `restart: unless-stopped`, o Fluent Bit reenvia o que ficou no buffer em disco e o Alloy retoma a leitura do CloudWatch, com o horário original de cada evento (seções 4.2 a 4.4). A retomada do CloudWatch relê o log group inteiro (seção 4.3).
 
 ### 6.7 Evolução futura
 
@@ -663,7 +664,7 @@ Sem código de aplicação. O trabalho é de configuração:
 - Fluent Bit: output `loki` e buffer em disco (feito e testado localmente, seção 4.2).
 - Alloy (imagem oficial, `--stability.level=experimental`):
   - `loki.source.api` com `use_incoming_timestamp`.
-  - Um `otelcol.receiver.awscloudwatch` por origem, com `otelcol.storage.file`.
+  - Um `otelcol.receiver.awscloudwatch` por origem, sem `otelcol.storage.file` (seção 4.3).
   - Dicas de labels e `otelcol.exporter.loki` para RDS/WAF.
   - `loki.write` com retentativa sem limite.
   - `otelcol.exporter.awss3` para o arquivo bruto (seções 4.3 e 4.4).
@@ -733,7 +734,7 @@ Configuração apenas:
 
 6. Tempo persiste as traces no S3 e grava as métricas RED e do service graph no Mimir, que guarda os blocos no S3.
 
-7. O Alloy (EC2 de observabilidade) recebe os logs dos containers, lê RDS e WAF no CloudWatch a cada 10 s, define labels e timestamp e envia ao Loki e ao arquivo bruto no S3.
+7. O Alloy (EC2 de observabilidade) recebe os logs dos containers, lê RDS e WAF no CloudWatch a cada 60 s, define labels e timestamp e envia ao Loki e ao arquivo bruto no S3.
 
 8. Loki persiste os logs no S3, com retenção de 7 dias.
 
@@ -1141,7 +1142,7 @@ Execução: `k6 run -e BASE_URL=http://<dns-do-alb>/api -e EMAIL=<usuario-demo> 
 |---|---|---|
 | 1. Normal | Rodar o `demo.js` | Live Tail com os logs chegando; painel RED estável; service graph `app → mysql`; um trace qualquer no waterfall |
 | 2. Falha na fila | Com o k6 rodando, parar o RabbitMQ de uma AZ (`docker service scale stockflow_rabbitmq=0` no `app-1`) e chamar `POST /api/auth/esqueci-senha`, que publica na fila | Logs `ERROR` no Live Tail → clique no `trace_id` → span de publish no RabbitMQ com erro ou lento; aresta `app → rabbitmq` com erro no service graph; taxa de erro subindo no RED. Depois, `docker service scale stockflow_rabbitmq=1` |
-| 3. Ataque bloqueado | Ultrapassar o limite do WAF de propósito (`k6 run --vus 30 --duration 1m`) | Respostas 429 no k6 e, ~10–15 s depois (mais o atraso do WAF até o CloudWatch, seção 4.5), `{origin="waf-logs"} \|= "BLOCK"` no Live Tail, mostrando o pipeline WAF → CloudWatch → Alloy → Loki |
+| 3. Ataque bloqueado | Ultrapassar o limite do WAF de propósito (`k6 run --vus 30 --duration 1m`) | Respostas 429 no k6 e, até ~1,5 min depois (seção 4.5), `{origin="waf-logs"} \|= "BLOCK"` no Live Tail, mostrando o pipeline WAF → CloudWatch → Alloy → Loki |
 
 O ato 3 vem por último, porque o IP do k6 fica bloqueado por alguns minutos depois de estourar o limite. No ato 2, validar antes da apresentação como o endpoint responde com a fila parada: a publicação acontece após o commit (`afterCommit`), então o erro pode aparecer no span e nos logs sem mudar o status HTTP.
 
