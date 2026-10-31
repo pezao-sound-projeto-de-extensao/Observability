@@ -1,6 +1,6 @@
 # Tasks: Observabilidade própria na AWS
 
-Quebra do documento [`observabilidade-aws-logs-traces.md`](../observabilidade-aws-logs-traces.md) em 5 partes. A parte 1 junta tudo que mexe na AWS e na aplicação (Terraform, Fluent Bit, backend). As partes 2 a 5 são **fatias verticais por sinal**: cada uma leva o pipeline completo daquele sinal, do Alloy ao Grafana, para quem pegar a parte entregar algo visível no fim. As referências "§ X" apontam para seções do documento.
+Quebra do documento [`README.md`](../README.md) em 5 partes. A parte 1 junta tudo que mexe na AWS e na aplicação (Terraform, Fluent Bit, backend). As partes 2 a 5 são **fatias verticais por sinal**: cada uma leva o pipeline completo daquele sinal, do Alloy ao Grafana, para quem pegar a parte entregar algo visível no fim. As referências "§ X" apontam para seções do documento.
 
 Cada task indica a **fase** do roadmap (§ 14): F1 logs, F2 tracing, F3 complementos, F4 evolução.
 
@@ -8,11 +8,11 @@ Cada task indica a **fase** do roadmap (§ 14): F1 logs, F2 tracing, F3 compleme
 |---|---|---|
 | [1-infra-backend](1-infra-backend/) | Terraform (repo infra e repo observabilidade), Fluent Bit nos nós app, logs JSON e OTel Agent no backend | ~16 h |
 | [2-logs](2-logs/) | Compose, Loki, Alloy (containers e CloudWatch), Grafana com Live Tail | ~14 h |
-| [3-traces](3-traces/) | Alloy OTLP, Tempo, correlação log ↔ trace | ~6 h |
+| [3-traces](3-traces/) | Alloy OTLP, Tempo, correlação log ↔ trace, personalização do Grafana | ~6 h + 2 h (3.3, fora do prazo) |
 | [4-metricas](4-metricas/) | Mimir, metrics-generator, dashboard RED, exemplars, self-monitoring, alertas | ~12 h |
 | [5-extensoes](5-extensoes/) | Pyroscope, Faro (frontend), Drilldown, demo k6, evolução | ~12 h |
 
-**Total:** ~60 h + ~20% de folga para bloqueios do Learner Lab ≈ 72 h.
+**Total:** ~62 h + ~20% de folga para bloqueios do Learner Lab ≈ 74 h. A 3.3 depende de tasks de outras partes e é exceção ao prazo da parte 3.
 
 ## Tasks
 
@@ -31,12 +31,13 @@ Cada task indica a **fase** do roadmap (§ 14): F1 logs, F2 tracing, F3 compleme
 - [2.1 Docker Compose base via Ansible](2-logs/01-compose-base.md) · F1
 - [2.2 Loki](2-logs/02-loki.md) · F1
 - [2.3 Alloy: logs dos containers e arquivo bruto no S3](2-logs/03-alloy-logs-containers.md) · F1
-- [2.4 Leitor do CloudWatch: RDS e WAF](2-logs/04-alloy-cloudwatch.md) · F1
+- [2.4 Leitor do CloudWatch: RDS e WAF](2-logs/04-cloudwatch-reader.md) · F1
 - [2.5 Grafana, data source Loki e Live Tail](2-logs/05-grafana-loki-livetail.md) · F1
 
 **3-traces**
 - [3.1 Alloy OTLP e Tempo](3-traces/01-alloy-otlp-tempo.md) · F2
 - [3.2 Data source Tempo e correlação com o Loki](3-traces/02-tempo-correlacao.md) · F2, F3
+- [3.3 Personalização do Grafana](3-traces/03-personalizacao-grafana.md) · F3 · **fora do prazo** (depende de 2.5, 4.2, 4.4, 5.1, 5.3)
 
 **4-metricas**
 - [4.1 Mimir, pipeline de métricas e metrics-generator](4-metricas/01-mimir-metrics-generator.md) · F3
@@ -58,6 +59,7 @@ Cada task indica a **fase** do roadmap (§ 14): F1 logs, F2 tracing, F3 compleme
 1.5, 1.6 ─────────────────────────────> 3.1 ─> 3.2                (traces no ar)
                                          └──> 4.1 ─> 4.2, 4.3 ─> 4.4
 1.7 ─> 5.1;  1.3 ─> 5.2;  4.1 ─> 5.3;  tudo ─> 5.4
+2.5, 4.2, 4.4, 5.1, 5.3 ─> 3.3                                      (fora do prazo)
 ```
 
 A parte 1 é pré-requisito das outras (EC2, IP fixo, portas). As partes 3, 4 e 5 podem andar em paralelo depois que a 2 subir o Compose e o Grafana.

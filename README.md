@@ -221,7 +221,7 @@ O **Alloy** roda em container na EC2 de observabilidade e é o único ponto de p
 4. Envia ao Loki por `loki.write` (`http://loki:3100`, rede do Compose).
 5. Grava o arquivo bruto no S3 (abaixo).
 
-**Labels x linha:** `trace_id`, `span_id`, `usuario`, `level` e os demais campos da aplicação ficam **na linha**, nunca em labels. Como labels, explodiriam a cardinalidade do Loki e quebrariam o derived field do `trace_id` (seção 5.6). Na linha, ficam filtráveis com `| json`.
+**Labels x linha:** `trace_id`, `span_id`, `usuario`, `level` e os demais campos da aplicação ficam **na linha**, nunca em labels. Como labels, explodiriam a cardinalidade do Loki. Na linha, ficam filtráveis com `| json`, que também alimenta o derived field do `trace_id` (seção 5.6).
 
 ```alloy
 loki.source.api "fluentbit" {
@@ -462,9 +462,11 @@ datasources:
     url: http://loki:3100
     jsonData:
       derivedFields:
-        # Log → Trace: o \s* tolera o JSON com ou sem espaço após os dois-pontos
+        # Log → Trace: lê o campo trace_id extraído pelo | json, não o texto da linha,
+        # para o link continuar com line_format (dashboard "Logs", seção 4.6)
         - name: trace_id
-          matcherRegex: '"trace_id":\s*"(\w+)"'
+          matcherType: label
+          matcherRegex: trace_id
           datasourceUid: tempo
           url: '$${__value.raw}' # $$ escapa a interpolação de variáveis do provisioning
 
@@ -768,7 +770,7 @@ Configuração apenas:
 
    Já se sabe que foi a réplica 2 do `app-1`, na AZ a.
 
-2. O desenvolvedor clica no botão do `trace_id`, criado pelo derived field.
+2. O desenvolvedor clica no botão do `trace_id`, criado pelo derived field (a consulta precisa do `| json`).
 
 3. O Grafana abre a trace no Tempo.
 

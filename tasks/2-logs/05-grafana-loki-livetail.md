@@ -20,7 +20,7 @@
     ```logql
     {env="production", service=~"$service", host=~"$host", origin=~"$origin"} | json | level=~"$level" | line_format "{{.host}} {{.level}} {{.message}}{{.log}}"
     ```
-    `{{.message}}` vem do JSON do backend (task 1.5) e `{{.log}}` das linhas em texto (nginx, rabbitmq e o backend antes da 1.5); só um dos dois existe em cada linha. A cor por nível e o link para a trace dependem da 1.5.
+    `{{.message}}` vem do JSON do backend (task 1.5) e `{{.log}}` das linhas em texto (nginx, rabbitmq e o backend antes da 1.5); só um dos dois existe em cada linha. A cor por nível depende da 1.5; o link para a trace depende da 1.5 e do derived field da 3.2.
 
 ## Pronto quando
 
