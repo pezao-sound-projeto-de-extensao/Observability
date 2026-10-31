@@ -12,7 +12,7 @@
   - Volume nomeado para dados, no EBS.
   - **Imagens com versão fixada**.
 - [ ] Publicar no host só as portas do `alloy` (3500, 4318, 4040, 9999, 12347, 12345) e a `3000` do `grafana`. Loki, Tempo, Mimir e Pyroscope **não** publicam portas (sem autenticação).
-- [ ] Alloy com `--stability.level=experimental` (exigido por `awscloudwatch` e `awss3`; vale para o processo todo).
+- [ ] Alloy com `--stability.level=experimental` (exigido por `awss3`; vale para o processo todo).
 - [ ] Mudanças de config do Alloy via `/-/reload`, não restart: um restart interrompe logs, traces e métricas ao mesmo tempo.
 
 ## Pronto quando

@@ -89,7 +89,7 @@ A arquitetura separa **logs**, **traces** e **métricas** em pipelines distintos
 Requisição:  Usuário ──> WAF ──> ALB ──> nginx ──> Backends REST x4 (EC2) ──> RDS
 
 Logs:        Backends ──> Fluent Bit ──(HTTP, API do Loki)──┐
-             RDS/WAF  ──> CloudWatch Logs ──(polling)───────┴──> Alloy ──┬──> Loki ──> S3 (chunks)
+             RDS/WAF  ──> CloudWatch Logs ──(leitor)────────┴──> Alloy ──┬──> Loki ──> S3 (chunks)
                                                                          └──> S3 (arquivo bruto)
 
 Traces:      Backends ──> Alloy ──> Tempo ──> S3
@@ -109,8 +109,8 @@ O Grafana consulta o Loki, o Tempo e o Mimir (a stack LGTM: Loki, Grafana, Tempo
 | Decisão | Justificativa |
 |---|---|
 | Sem barramento de logs | O Fluent Bit envia direto ao Alloy, e a durabilidade vem do buffer em disco do Fluent Bit. Um barramento na mesma EC2 do consumidor cairia junto com ele e não protegeria nada. Kinesis (com Logstash) e Redpanda foram avaliados e descartados |
-| Alloy como ponto único de processamento de logs | Coletor da própria Grafana, sem JVM nem plugins extras: recebe os logs dos containers pela API de push do Loki, lê RDS/WAF no CloudWatch, define labels e timestamp e grava no Loki e no arquivo bruto. O Loki, sem autenticação, não fica exposto aos nós app |
-| Alloy lendo RDS e WAF no CloudWatch (polling) | Sem Subscription Filter, Kinesis ou Lambda. Troca ~1 min de atraso (polling de 60 s, seção 4.3) por menos infraestrutura |
+| Alloy como ponto único de processamento de logs | Coletor da própria Grafana, sem JVM nem plugins extras: recebe os logs dos containers e os de RDS/WAF pela API de push do Loki, define labels e timestamp e grava no Loki e no arquivo bruto. O Loki, sem autenticação, não fica exposto aos nós app |
+| Leitor próprio de RDS e WAF no CloudWatch (polling) | Sem Subscription Filter, Kinesis ou Lambda. Troca algum atraso (polling de 15 s mais a entrega ao CloudWatch, seção 4.5) por menos infraestrutura. Substitui o `otelcol.receiver.awscloudwatch`, que perdeu eventos atrasados no lab (seção 4.3) |
 | Arquivo bruto no S3 pelo Alloy | Os chunks do Loki só são legíveis pelo Loki. O Alloy grava as linhas originais por origem, consultáveis pelo Athena (seção 4.4) |
 | Tempo para traces | Backend open source de tracing, com armazenamento em S3 e integração nativa com Grafana |
 | Alloy também para traces e métricas, sem OTel Collector | Um só coletor para os três sinais: recebe o OTLP dos backends (`:4318`), descarta os spans de health check, envia traces ao Tempo e métricas ao Mimir, com fila e retry nos exporters durante reinícios, e é onde entraria tail sampling. Em troca, um restart do Alloy interrompe os três sinais ao mesmo tempo, e a flag `--stability.level=experimental` (exigida pelos componentes de logs) vale para o processo todo (seção 6.6) |
@@ -130,8 +130,8 @@ O Grafana consulta o Loki, o Tempo e o Mimir (a stack LGTM: Loki, Grafana, Tempo
 | Origem | Como os logs são gerados | Caminho até o Alloy |
 |---|---|---|
 | Containers EC2 (`app`, `nginx`, `rabbitmq`) | Driver `fluentd` do Docker envia ao Fluent Bit (já instalado) | Fluent Bit → Alloy (push HTTP, API do Loki) |
-| RDS | Logs exportados nativamente para CloudWatch Logs | Alloy lê o log group (polling) |
-| AWS WAF | Logs exportados para CloudWatch Logs, com prefixo `aws-waf-logs-` | Alloy lê o log group (polling) |
+| RDS | Logs exportados nativamente para CloudWatch Logs | `cloudwatch-reader` lê o log group (polling) |
+| AWS WAF | Logs exportados para CloudWatch Logs, com prefixo `aws-waf-logs-` | `cloudwatch-reader` lê o log group (polling) |
 
 ### 4.2 Fluxo dos containers
 
@@ -192,30 +192,32 @@ logging.structured.format.console=logstash
 
 ### 4.3 Fluxo de RDS e WAF
 
-RDS e WAF já exportam para o CloudWatch Logs. O Alloy lê os log groups direto pela API do CloudWatch (`otelcol.receiver.awscloudwatch`), sem Subscription Filter, Kinesis ou Lambda.
+RDS e WAF já exportam para o CloudWatch Logs. Um leitor próprio ([`cloudwatch-reader/`](cloudwatch-reader/), Python e boto3, um container no Compose) lê os log groups pela API do CloudWatch e envia ao Alloy pela API de push do Loki, sem Subscription Filter, Kinesis ou Lambda.
 
 ```text
-RDS ──> CloudWatch Logs <──(polling, 60 s)── Alloy
-WAF ──> CloudWatch Logs <──(polling, 60 s)── Alloy
+RDS ──> CloudWatch Logs <──(polling, 15 s)── cloudwatch-reader ──(:3501)──> Alloy
+WAF ──> CloudWatch Logs <──(polling, 15 s)── cloudwatch-reader ──(:3502)──> Alloy
 ```
 
-- Um receiver por origem, com os log groups por nome (bloco `named`), de modo que a origem é fixa no pipeline:
+- **Por que não o `otelcol.receiver.awscloudwatch`:** ele não tem margem para eventos que chegam atrasados ao CloudWatch e perdeu eventos no lab; um restart relê o log group inteiro; e uma falha no STS derruba o processo do Alloy (task 2.4).
+- Log groups por nome, com a origem fixa na config:
   - `/aws/rds/instance/app-db/error` e `/slowquery` → `origin="rds-logs"`
   - `aws-waf-logs-main-alb-waf` → `origin="waf-logs"`
-- `poll_interval = "60s"` (o padrão), que define o atraso desses logs (seção 4.5). Intervalos curtos não funcionam: o receiver não tem margem para eventos que chegam atrasados ao CloudWatch, e o WAF entrega de 7 a 24 s depois. Com 10 s, o teste no lab leu 0 de 24 eventos.
-- **Sem checkpoint:** o receiver não usa `otelcol.storage.file`. Com ele, a janela sempre pula para o horário atual e o teste perdeu 7 de 36 eventos; sem ele, leu 50 de 50. Um evento isolado no fim de uma janela vazia ainda pode se perder.
-- **Retomada:** ao iniciar, o receiver relê o log group inteiro (até 3 dias de retenção). O Loki não duplica o que já tem, mas recusa o que tiver mais de 1 h em relação ao log mais novo do stream, o que incrementa `loki_write_dropped_entries_total`. O arquivo bruto recebe tudo de novo, então o Athena precisa de `SELECT DISTINCT`. Detalhes na task 2.4.
-- **Timestamp:** o Loki recebe o horário do evento no CloudWatch, não o da leitura (conferido no lab).
-- **Experimental:** o componente exige `--stability.level=experimental` no Alloy e pode mudar entre versões. Fixar a versão da imagem.
-- **IAM:** `logs:FilterLogEvents`, `logs:DescribeLogGroups` e `logs:DescribeLogStreams` pela `LabRole`. A leitura funcionou no lab, sem usar o policy simulator.
+- **Eventos atrasados:** cada ciclo relê uma janela recente (`lookback_seconds`: 120 s no WAF, que entrega em até 24 s; 600 s no RDS, em que o error log levou até 141 s) e descarta pelo `eventId` o que já enviou. Um evento que atrase mais que a janela não é lido.
+- **Retomada:** o progresso e os IDs enviados ficam em um volume no EBS. Depois de uma parada, o leitor continua de onde estava e avança no máximo 15 min por ciclo em todos os grupos, porque o Loki recusa o que tiver mais de 1 h em relação ao log mais novo do stream. Se o volume for perdido, ele recomeça na última 1 h.
+- **Timestamp:** o Alloy recebe o horário do evento no CloudWatch, com `use_incoming_timestamp = true`.
+- **Falhas:** um grupo que falha não avança nem impede os outros, e o próximo ciclo relê a janela dele. O throttling da API espera em vez de falhar (retentativa `adaptive` do boto3).
+- **Volume:** reler a janela custa chamadas à API e tráfego no NAT, proporcionais ao volume de logs. A ~237 req/s por 1 min, o leitor não perdeu eventos, chegou a 83 MiB e os ciclos subiram para até ~26 s, sem erro de throttling (task 2.4).
+- **Sem métricas próprias:** o leitor só registra no stdout (`docker compose logs cloudwatch-reader`).
+- **IAM:** só `logs:FilterLogEvents`, pela `LabRole`.
 
 ### 4.4 Processamento no Alloy e envio ao Loki
 
 O **Alloy** roda em container na EC2 de observabilidade e é o único ponto de processamento de logs:
 
 1. Recebe os logs dos containers em `loki.source.api` (porta `3500`), com `use_incoming_timestamp = true`. O padrão é `false`, e com ele os logs reenviados do buffer do Fluent Bit entrariam com o horário da chegada.
-2. Lê RDS e WAF no CloudWatch (seção 4.3).
-3. Mantém só quatro labels: `env`, `origin`, `service` e `host`. Nos containers, elas chegam prontas do Fluent Bit. Para RDS e WAF, entram como atributos e são promovidas a labels pelas dicas `loki.resource.labels`/`loki.attribute.labels` antes do `otelcol.exporter.loki`.
+2. Recebe RDS e WAF do `cloudwatch-reader` em dois `loki.source.api` (portas `3501` e `3502`, só na rede do Compose), um por origem para separar o arquivo bruto (seção 4.3).
+3. Mantém só quatro labels: `env`, `origin`, `service` e `host`. Nos containers, elas chegam prontas do Fluent Bit; em RDS e WAF, do `cloudwatch-reader`.
 4. Envia ao Loki por `loki.write` (`http://loki:3100`, rede do Compose).
 5. Grava o arquivo bruto no S3 (abaixo).
 
@@ -262,7 +264,7 @@ O Loki persiste os logs no Amazon S3.
 |---|---|---|---|
 | Container → Fluent Bit | Fluentd Forward (msgpack sobre TCP), driver `fluentd` | 24224 | Local, no nó app |
 | Fluent Bit → Alloy | HTTP `POST /loki/api/v1/push`, sem TLS | 3500 | VPC, IP privado; SG restrito às EC2 de app |
-| Alloy → CloudWatch Logs | HTTPS, API da AWS (polling) | 443 | NAT gateway da VPC (`ngw`) |
+| `cloudwatch-reader` → CloudWatch Logs | HTTPS, API da AWS (polling) | 443 | NAT gateway da VPC (`ngw`) |
 | Alloy → Loki | HTTP, push da API do Loki | 3100 | Rede do Compose |
 | Alloy, Loki, Tempo e Mimir → S3 | HTTPS | 443 | NAT gateway; um VPC gateway endpoint de S3 (gratuito) tiraria esse tráfego do NAT, que cobra por GB processado |
 | Grafana → Loki | HTTP; Live Tail por WebSocket (`/loki/api/v1/tail`) | 3100 | Rede do Compose |
@@ -283,7 +285,7 @@ O Fluent Bit só considera um chunk entregue quando o Alloy responde 2xx. Em cas
 | Loki → Grafana (tail) | menos de 1 s |
 | **Total** | **~1–3 s** |
 
-**Latência de RDS e WAF:** o atraso de entrega do próprio serviço ao CloudWatch (no lab, 7 a 24 s no WAF), mais até 60 s de polling e até 1 s de lote, ou seja, **até ~1,5 min**. Esse é o custo de não ter Subscription Filter: com o Kinesis, eram segundos.
+**Latência de RDS e WAF:** o atraso de entrega do próprio serviço ao CloudWatch (no lab, 7 a 24 s no WAF, ~3 s no slow query e 5 a 141 s no error log), mais até 15 s de polling e até 1 s de lote, ou seja, **até ~45 s no WAF, ~20 s no slow query e até ~2,5 min no error log do RDS**. No lab, o WAF levou de 14 a 34 s (até 43 s sob carga) e o slow query de 10 a 22 s; o valor do error log é uma estimativa (task 2.4). Esse é o custo de não ter Subscription Filter: com o Kinesis, eram segundos.
 
 ### 4.6 Live Tail
 
@@ -519,7 +521,7 @@ Para ver só os logs de uma réplica: `{service="app", host="app-1"} | json | co
 | Componente | Papel |
 |---|---|
 | Fluent Bit | Coleta logs dos containers e envia ao Alloy, com buffer em disco |
-| Grafana Alloy | Coletor único: recebe os logs dos containers, lê RDS/WAF no CloudWatch e envia ao Loki e ao arquivo bruto no S3; recebe spans e métricas OTLP, filtra e repassa ao Tempo e ao Mimir |
+| Grafana Alloy | Coletor único: recebe os logs dos containers e os de RDS/WAF e envia ao Loki e ao arquivo bruto no S3; recebe spans e métricas OTLP, filtra e repassa ao Tempo e ao Mimir |
 | OpenTelemetry Java Agent | Instrumentação automática dos backends |
 | Grafana Loki | Armazenamento e consulta de logs |
 | Grafana Tempo | Armazenamento e consulta de traces |
@@ -535,7 +537,8 @@ Uma única EC2, em **subnet privada**, roda toda a stack com Docker Compose. Cad
 
 ```text
 EC2: observability (Docker Compose)
-├── alloy           :3500, :4318, :4040, :9999 e :12347 publicados → loki:3100, tempo:4318, mimir:9009, pyroscope:4040, S3 logs-raw; lê CloudWatch Logs
+├── alloy           :3500, :4318, :4040, :9999 e :12347 publicados → loki:3100, tempo:4318, mimir:9009, pyroscope:4040, S3 logs-raw
+├── cloudwatch-reader  sem porta publicada → lê CloudWatch Logs, envia a alloy:3501 e alloy:3502
 ├── loki            :3100 só na rede interna → S3 loki-logs
 ├── tempo           :3200 só na rede interna → S3 tempo-traces, mimir (metrics-generator)
 ├── mimir           :9009 só na rede interna → S3 mimir-metrics (TSDB local no EBS)
@@ -579,12 +582,13 @@ No security group do ALB, a porta `3000` é liberada apenas para os IPs da equip
 | Container | Memória (limite inicial) | Observação |
 |---|---|---|
 | `alloy` | 768 MB | Logs, traces e métricas: recebe, filtra e repassa; sem JVM |
+| `cloudwatch-reader` | 256 MB | Lê RDS e WAF; guarda em memória os IDs da janela recente |
 | `loki` | 1 GB | Monolítico, volume baixo |
 | `tempo` | 1 GB | Monolítico, volume baixo |
 | `grafana` | 512 MB | Só consulta Loki, Tempo e Mimir, mas o Grafana 13.3 sofreu OOM com 256 MB ao subir; estabilizou em ~360 MB |
 | `mimir` | 1 GB | Monolítico, poucas séries (4 backends); medir sob carga real (no teste local, vazio, usou ~45 MB) |
 | `pyroscope` | 768 MB | Monolítico; profiles de 4 backends (seção 18.4) |
-| **Total** | **~5 GB** | |
+| **Total** | **~5,3 GB** | |
 
 Recomendação: **`t3.large`** (2 vCPU, 8 GB), com folga para picos e cache do sistema. Uma `t3.medium` (4 GB) não comporta: a soma dos limites já ocupa toda a memória. O Grafana não pesa: dá para mantê-lo na mesma EC2 sem impacto.
 
@@ -612,7 +616,7 @@ Ambos rodam em **modo monolítico**: um único processo com ingestão, consulta 
 - **Ponto único de falha:** se a EC2 cair, logs, traces e métricas param. Os logs dos containers ficam no buffer em disco do Fluent Bit (até `storage.total_limit_size` por nó) e os de RDS/WAF ficam no CloudWatch (3 dias). Os dois chegam quando a EC2 volta. Spans e métricas enviados durante a queda são perdidos.
 - **Alloy como coletor único:** um restart do Alloy, por exemplo ao mudar a config, interrompe logs, traces e métricas ao mesmo tempo. Os logs dos containers ficam no buffer do Fluent Bit, e os de RDS/WAF no CloudWatch. Spans e métricas enviados durante o restart podem se perder. Por isso, mudanças de config devem ser recarregadas sem derrubar o processo (`/-/reload`), não com restart do container.
 - **WAL e caches** do Loki, do Tempo e do Mimir (TSDB das últimas horas, antes de subir o bloco ao S3) ficam no EBS, então sobrevivem a restart e reboot.
-- **Sessão do lab:** ao fim da sessão, as EC2 são paradas. Ao reiniciar, os containers sobem com `restart: unless-stopped`, o Fluent Bit reenvia o que ficou no buffer em disco e o Alloy retoma a leitura do CloudWatch, com o horário original de cada evento (seções 4.2 a 4.4). A retomada do CloudWatch relê o log group inteiro (seção 4.3).
+- **Sessão do lab:** ao fim da sessão, as EC2 são paradas. Ao reiniciar, os containers sobem com `restart: unless-stopped`, o Fluent Bit reenvia o que ficou no buffer em disco e o `cloudwatch-reader` retoma a leitura de onde parou, com o horário original de cada evento (seções 4.2 a 4.4).
 
 ### 6.7 Evolução futura
 
@@ -664,11 +668,10 @@ Sem código de aplicação. O trabalho é de configuração:
 - Fluent Bit: output `loki` e buffer em disco (feito e testado localmente, seção 4.2).
 - Alloy (imagem oficial, `--stability.level=experimental`):
   - `loki.source.api` com `use_incoming_timestamp`.
-  - Um `otelcol.receiver.awscloudwatch` por origem, sem `otelcol.storage.file` (seção 4.3).
-  - Dicas de labels e `otelcol.exporter.loki` para RDS/WAF.
+  - Um `loki.source.api` por origem para o `cloudwatch-reader` (seção 4.3).
   - `loki.write` com retentativa sem limite.
   - `otelcol.exporter.awss3` para o arquivo bruto (seções 4.3 e 4.4).
-- Validar no lab: a retomada e o timestamp do receiver do CloudWatch depois de parar a EC2, e o formato do arquivo bruto no Athena.
+- Validar no lab: a retomada e o timestamp do `cloudwatch-reader` depois de parar a EC2, e o formato do arquivo bruto no Athena.
 
 ### 8.3 No Alloy (OTLP), Tempo e Mimir
 
@@ -710,7 +713,7 @@ Configuração apenas:
 | Métricas de JVM, HTTP e pool de conexões | OpenTelemetry Java Agent |
 | Métricas RED e service graph | Tempo metrics-generator + Mimir |
 | Buffer em disco e reenvio dos logs dos containers | Fluent Bit (`storage.type filesystem`) |
-| Leitura de RDS/WAF no CloudWatch e envio ao Loki | Grafana Alloy (`otelcol.receiver.awscloudwatch`) |
+| Leitura de RDS/WAF no CloudWatch | `cloudwatch-reader` (Python e boto3) |
 | Arquivo bruto de logs consultável pelo Athena | Grafana Alloy (`otelcol.exporter.awss3`) |
 
 ---
@@ -734,7 +737,7 @@ Configuração apenas:
 
 6. Tempo persiste as traces no S3 e grava as métricas RED e do service graph no Mimir, que guarda os blocos no S3.
 
-7. O Alloy (EC2 de observabilidade) recebe os logs dos containers, lê RDS e WAF no CloudWatch a cada 60 s, define labels e timestamp e envia ao Loki e ao arquivo bruto no S3.
+7. O `cloudwatch-reader` lê RDS e WAF no CloudWatch a cada 15 s. O Alloy (EC2 de observabilidade) recebe esses logs e os dos containers, define labels e timestamp e envia ao Loki e ao arquivo bruto no S3.
 
 8. Loki persiste os logs no S3, com retenção de 7 dias.
 
@@ -803,7 +806,7 @@ Caso seja necessário no futuro — por exemplo, para investigar 5xx percebidos 
 - Rodar a stack de observabilidade em uma EC2 `t3.large` com Docker Compose.
 - Manter Alloy, Loki, Tempo, Mimir e Grafana em containers separados, com `mem_limit`.
 - Não publicar as portas do Loki, do Tempo e do Mimir no host. O Fluent Bit fala com o Alloy, nunca direto com o Loki.
-- Fixar a versão da imagem do Alloy, porque dois componentes usados (`awscloudwatch` e `awss3`) são experimentais.
+- Fixar a versão da imagem do Alloy, porque o `awss3` é experimental.
 - Monitorar o uso do buffer do Fluent Bit nos nós app e os descartes do Alloy (`loki_write_dropped_bytes_total`).
 - Usar sampling de 100% nas traces (`OTEL_TRACES_SAMPLER=always_on`, padrão do agente): todo `trace_id` presente nos logs tem a trace correspondente no Tempo, e o link log → trace nunca cai em "trace not found".
 - Se o volume crescer, usar tail sampling no Alloy (100% de erros e lentas, amostra das demais) em vez de reduzir o sampling no agente.
@@ -821,7 +824,7 @@ Caso seja necessário no futuro — por exemplo, para investigar 5xx percebidos 
 - Deploy do Fluent Bit com output `loki` e buffer em disco (já feito no repo DevOps; exige `otel_endpoint_ip`).
 - Adicionar listener `:3000` e target group do Grafana no `main-alb`.
 - Subir Alloy (containers e RDS/WAF → Loki e arquivo bruto no S3), Loki e Grafana no Compose.
-- Validar a retomada do receiver do CloudWatch depois de parar a EC2.
+- Validar a retomada do `cloudwatch-reader` depois de parar a EC2.
 - Configurar retenção do Loki e lifecycle do bucket `logs-raw`.
 - Habilitar Live Tail no Grafana.
 
@@ -860,7 +863,7 @@ Estimativa para 1 pessoa com experiência em Terraform e AWS.
 | Fluent Bit: output `loki` e buffer em disco (já feito e testado localmente) | 1 h (deploy) |
 | EC2 de observabilidade: Terraform (subnet privada, IP fixo, SG com `3500` e `4318`, listener `:3000` no ALB) + Docker Compose via Ansible | 4 h |
 | Alloy: Fluent Bit → Loki (`loki.source.api`, timestamp, labels, retentativas) e arquivo bruto no S3 | 4 h |
-| Alloy: RDS/WAF via `otelcol.receiver.awscloudwatch` (experimental; validar a retomada após parada da EC2) | 3 h |
+| Leitor próprio de RDS/WAF no CloudWatch (validar a retomada após parada da EC2) | 3 h |
 | Loki + S3 + retenção | 4 h |
 | Grafana + provisioning dos data sources | 3 h |
 | **Fase 1: logs + Live Tail** | **20 h** |
@@ -883,7 +886,7 @@ Estimativa para 1 pessoa com experiência em Terraform e AWS.
 | **Total** | **~72 h (cerca de 9 dias úteis)** |
 | Fase 4: evolução | Contínua |
 
-Riscos: bloqueios do Learner Lab (reservar ~20% de folga), componentes experimentais do Alloy (`awscloudwatch`, cuja retomada após parada não está documentada, e `awss3`) e compatibilidade do OTel Java Agent com Spring Boot 4 / Spring Framework 7 (usar a versão mais recente do agente).
+Riscos: bloqueios do Learner Lab (reservar ~20% de folga), o componente experimental `awss3` do Alloy e compatibilidade do OTel Java Agent com Spring Boot 4 / Spring Framework 7 (usar a versão mais recente do agente).
 
 ---
 
@@ -1142,7 +1145,7 @@ Execução: `k6 run -e BASE_URL=http://<dns-do-alb>/api -e EMAIL=<usuario-demo> 
 |---|---|---|
 | 1. Normal | Rodar o `demo.js` | Live Tail com os logs chegando; painel RED estável; service graph `app → mysql`; um trace qualquer no waterfall |
 | 2. Falha na fila | Com o k6 rodando, parar o RabbitMQ de uma AZ (`docker service scale stockflow_rabbitmq=0` no `app-1`) e chamar `POST /api/auth/esqueci-senha`, que publica na fila | Logs `ERROR` no Live Tail → clique no `trace_id` → span de publish no RabbitMQ com erro ou lento; aresta `app → rabbitmq` com erro no service graph; taxa de erro subindo no RED. Depois, `docker service scale stockflow_rabbitmq=1` |
-| 3. Ataque bloqueado | Ultrapassar o limite do WAF de propósito (`k6 run --vus 30 --duration 1m`) | Respostas 429 no k6 e, até ~1,5 min depois (seção 4.5), `{origin="waf-logs"} \|= "BLOCK"` no Live Tail, mostrando o pipeline WAF → CloudWatch → Alloy → Loki |
+| 3. Ataque bloqueado | Ultrapassar o limite do WAF de propósito (`k6 run --vus 30 --duration 1m`) | Respostas 429 no k6 e, até ~45 s depois (seção 4.5), `{origin="waf-logs"} \|= "BLOCK"` no Live Tail, mostrando o pipeline WAF → CloudWatch → leitor → Alloy → Loki |
 
 O ato 3 vem por último, porque o IP do k6 fica bloqueado por alguns minutos depois de estourar o limite. No ato 2, validar antes da apresentação como o endpoint responde com a fila parada: a publicação acontece após o commit (`afterCommit`), então o erro pode aparecer no span e nos logs sem mudar o status HTTP.
 
@@ -1229,7 +1232,7 @@ Hoje uma query no slow query log do RDS não diz de qual requisição veio (seç
 SELECT * FROM pedidos WHERE id = ? /*traceparent='00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01'*/
 ```
 
-O MySQL grava o texto recebido no slow query log, comentário incluído. A linha chega ao Loki pelo caminho já existente (CloudWatch → Alloy, seção 4.3), e um derived field transforma o `traceparent` em link para o Tempo.
+O MySQL grava o texto recebido no slow query log, comentário incluído. A linha chega ao Loki pelo caminho já existente (CloudWatch → leitor → Alloy, seção 4.3), e um derived field transforma o `traceparent` em link para o Tempo.
 
 No `docker-compose.yml.j2` do backend (seção 5.2):
 
