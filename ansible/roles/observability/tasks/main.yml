@@ -13,6 +13,8 @@
     mode: "0755"
   loop:
     - alloy
+    - cloudwatch-reader/config
+    - cloudwatch-reader/image
     - loki
     - grafana/provisioning/datasources
 
@@ -42,6 +44,31 @@
     dest: "{{ observability_dir }}/alloy/config.alloy"
     mode: "0644"
   notify: Recarregar Alloy
+
+- name: Gerar config do leitor do CloudWatch
+  ansible.builtin.template:
+    src: cloudwatch-reader/config.json.j2
+    dest: "{{ observability_dir }}/cloudwatch-reader/config/config.json"
+    mode: "0644"
+  notify: Reiniciar leitor do CloudWatch
+
+- name: Copiar código do leitor do CloudWatch
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../cloudwatch-reader/{{ item }}"
+    dest: "{{ observability_dir }}/cloudwatch-reader/image/{{ item }}"
+    mode: "0644"
+  loop:
+    - Dockerfile
+    - reader.py
+
+# Sempre roda: usa o cache se nada mudou, e o compose up só recria o container se a imagem mudar
+- name: Gerar imagem do leitor do CloudWatch
+  ansible.builtin.command:
+    cmd: docker build -t cloudwatch-reader:local .
+    chdir: "{{ observability_dir }}/cloudwatch-reader/image"
+  environment:
+    DOCKER_BUILDKIT: "0"
+  changed_when: false
 
 - name: Gerar data source do Grafana
   ansible.builtin.template:

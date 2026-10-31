@@ -8,6 +8,12 @@
   retries: 10
   delay: 3
 
+- name: Reiniciar leitor do CloudWatch
+  ansible.builtin.command:
+    cmd: docker compose restart cloudwatch-reader
+    chdir: "{{ observability_dir }}"
+  changed_when: true
+
 - name: Reiniciar Loki
   ansible.builtin.command:
     cmd: docker compose restart loki

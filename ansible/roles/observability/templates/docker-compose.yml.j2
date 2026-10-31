@@ -23,6 +23,15 @@ services:
       - ./alloy:/etc/alloy:ro
       - alloy-data:/var/lib/alloy/data
 
+  # Imagem gerada pelo Ansible com docker build: o Docker do dnf não traz o buildx, exigido pelo build do Compose
+  cloudwatch-reader:
+    image: cloudwatch-reader:local
+    restart: unless-stopped
+    mem_limit: 256m
+    volumes:
+      - ./cloudwatch-reader/config:/etc/cloudwatch-reader:ro
+      - cloudwatch-reader-data:/var/lib/cloudwatch-reader
+
   loki:
     image: grafana/loki:{{ loki_version }}
     restart: unless-stopped
@@ -48,5 +57,6 @@ services:
 
 volumes:
   alloy-data:
+  cloudwatch-reader-data:
   loki-data:
   grafana-data:
