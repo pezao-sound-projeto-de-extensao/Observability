@@ -1,0 +1,85 @@
+- name: Conferir senha do admin do Grafana
+  ansible.builtin.assert:
+    that:
+      - grafana_admin_password | length > 0
+      - "\"'\" not in grafana_admin_password"
+    fail_msg: Defina GRAFANA_ADMIN_PASSWORD no ambiente, sem aspas simples.
+  no_log: true
+
+- name: Criar pastas da stack
+  ansible.builtin.file:
+    path: "{{ observability_dir }}/{{ item }}"
+    state: directory
+    mode: "0755"
+  loop:
+    - alloy
+    - cloudwatch-reader/config
+    - cloudwatch-reader/image
+    - loki
+    - grafana/provisioning/datasources
+
+- name: Gerar docker-compose.yml
+  ansible.builtin.template:
+    src: docker-compose.yml.j2
+    dest: "{{ observability_dir }}/docker-compose.yml"
+    mode: "0644"
+
+- name: Gerar .env do Grafana
+  ansible.builtin.template:
+    src: env.j2
+    dest: "{{ observability_dir }}/.env"
+    mode: "0600"
+  no_log: true
+
+- name: Gerar config do Loki
+  ansible.builtin.template:
+    src: loki/loki.yaml.j2
+    dest: "{{ observability_dir }}/loki/loki.yaml"
+    mode: "0644"
+  notify: Reiniciar Loki
+
+- name: Gerar config do Alloy
+  ansible.builtin.template:
+    src: alloy/config.alloy.j2
+    dest: "{{ observability_dir }}/alloy/config.alloy"
+    mode: "0644"
+  notify: Recarregar Alloy
+
+- name: Gerar config do leitor do CloudWatch
+  ansible.builtin.template:
+    src: cloudwatch-reader/config.json.j2
+    dest: "{{ observability_dir }}/cloudwatch-reader/config/config.json"
+    mode: "0644"
+  notify: Reiniciar leitor do CloudWatch
+
+- name: Copiar código do leitor do CloudWatch
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../cloudwatch-reader/{{ item }}"
+    dest: "{{ observability_dir }}/cloudwatch-reader/image/{{ item }}"
+    mode: "0644"
+  loop:
+    - Dockerfile
+    - reader.py
+
+# Sempre roda: usa o cache se nada mudou, e o compose up só recria o container se a imagem mudar
+- name: Gerar imagem do leitor do CloudWatch
+  ansible.builtin.command:
+    cmd: docker build -t cloudwatch-reader:local .
+    chdir: "{{ observability_dir }}/cloudwatch-reader/image"
+  environment:
+    DOCKER_BUILDKIT: "0"
+  changed_when: false
+
+- name: Gerar data source do Grafana
+  ansible.builtin.template:
+    src: grafana/provisioning/datasources/loki.yaml.j2
+    dest: "{{ observability_dir }}/grafana/provisioning/datasources/loki.yaml"
+    mode: "0644"
+  notify: Reiniciar Grafana
+
+- name: Subir a stack
+  ansible.builtin.command:
+    cmd: docker compose up -d --remove-orphans
+    chdir: "{{ observability_dir }}"
+  register: compose_up
+  changed_when: "'Started' in compose_up.stderr or 'Recreated' in compose_up.stderr"

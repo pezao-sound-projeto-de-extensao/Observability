@@ -1,0 +1,6 @@
+- name: Stack de observabilidade
+  hosts: observability
+  become: true
+  roles:
+    - docker
+    - observability

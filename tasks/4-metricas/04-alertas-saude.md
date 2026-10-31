@@ -10,14 +10,16 @@
 
   | Alerta | Consulta |
   |---|---|
+  | Componente fora do ar | `up{job=~"loki\|tempo\|mimir\|grafana"} == 0` por 2 min |
   | Pipeline de logs parado (um por host) | `absent_over_time({service="app", host="app-1"}[5m])` |
   | Alloy não entrega | `rate(fluentbit_output_retries_total[5m]) > 0` por 5 min |
   | Descarte no Alloy | `increase(loki_write_dropped_bytes_total[5m]) > 0` |
-  | Disco da EC2 | `node_filesystem_avail_bytes{mountpoint="/host/root"} / node_filesystem_size_bytes < 0.15` |
-  | Memória perto do limite | `process_resident_memory_bytes{job=~"loki\|tempo\|mimir"}` > 85% do `mem_limit` |
+  | Disco da EC2 | `node_filesystem_avail_bytes{mountpoint="/"} / node_filesystem_size_bytes < 0.15` |
+  | Memória perto do limite | `process_resident_memory_bytes{job=~"alloy\|loki\|tempo\|mimir\|pyroscope"}` > 85% do `mem_limit` |
 
-- [ ] Conferir os nomes reais das métricas do Fluent Bit 3.2 (task 1.4).
-- [ ] Dashboard "Saúde da observabilidade": ingestão de Loki/Tempo/Mimir, retries e buffer do Fluent Bit por host, memória e disco da EC2.
+- [ ] Conferir os labels reais no Mimir: o `prometheus.exporter.unix` com `rootfs_path` deve reportar `mountpoint="/"`, sem o prefixo `/host/root`; e os valores de `job` de cada alvo da task 4.3.
+- [ ] Com o Loki fora, as consultas LogQL dão erro em vez de `absent`: configurar o estado de erro dessas regras como `Alerting` ou contar com o alerta de `up`.
+- [ ] Dashboard "Saúde da observabilidade" provisionado: ingestão de Loki/Tempo/Mimir, retries e buffer do Fluent Bit por host, memória e disco da EC2.
 
 ### F4: alertas de aplicação
 - [ ] Combinar com o time quais eventos alertar (taxa de `level="ERROR"`, picos de `BLOCK` no WAF, erros no RDS) e provisionar no mesmo contact point.
@@ -28,7 +30,7 @@ Os alertas disparam quando o lab é parado: silenciar no fim de cada sessão.
 
 ## Pronto quando
 
-Parar o Loki por 5 min dispara alerta no webhook.
+Parar o Loki por 5 min dispara o alerta "Componente fora do ar" no webhook.
 
 ## Métricas do Fluent Bit 3.2 (levantadas na task 1.4, 2026-10-28)
 
