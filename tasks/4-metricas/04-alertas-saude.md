@@ -17,7 +17,7 @@
   | Memória perto do limite | `process_resident_memory_bytes{job=~"loki\|tempo\|mimir"}` > 85% do `mem_limit` |
 
 - [ ] Conferir os nomes reais das métricas do Fluent Bit 3.2 (task 1.4).
-- [ ] Dashboard "Saúde da observabilidade": ingestão de Loki/Tempo/Mimir, retries e buffer do Fluent Bit por host, memória e disco da EC2.
+- [ ] Dashboard "Saúde da observabilidade" provisionado: ingestão de Loki/Tempo/Mimir, retries e buffer do Fluent Bit por host, memória e disco da EC2.
 
 ### F4: alertas de aplicação
 - [ ] Combinar com o time quais eventos alertar (taxa de `level="ERROR"`, picos de `BLOCK` no WAF, erros no RDS) e provisionar no mesmo contact point.

@@ -13,6 +13,7 @@
       datasourceUid: tempo
   ```
 - [ ] No data source Tempo: `serviceMap.datasourceUid: mimir`.
+- [ ] Dashboard em JSON no repo, pelo provider de `provisioning/dashboards/` (criado na task 2.5); a infra é recriada várias vezes e o EBS some no `destroy`.
 - [ ] Dashboard RED provisionado:
   ```promql
   sum by (span_name) (rate(traces_spanmetrics_calls_total{span_kind="SPAN_KIND_SERVER"}[5m]))
