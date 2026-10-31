@@ -4,7 +4,7 @@
 
 ## Contexto
 
-A PoC criou esses recursos e foi destruída; hoje o repo não tem nenhum deles. O Alloy lê esses log groups por polling (task 2.4).
+A PoC criou esses recursos e foi destruída; hoje o repo não tem nenhum deles. O `cloudwatch-reader` lê esses log groups por polling (task 2.4).
 
 ## O que fazer
 

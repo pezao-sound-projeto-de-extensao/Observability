@@ -10,7 +10,7 @@ variable "private_ip" {
 }
 
 variable "instance_type" {
-  description = "t3.medium não comporta ~4,75 GB de limites; t3.xlarge é negada no lab"
+  description = "t3.medium não comporta ~5,25 GiB de limites; t3.xlarge é negada no lab"
   type        = string
   default     = "t3.large"
 }

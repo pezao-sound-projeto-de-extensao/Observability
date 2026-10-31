@@ -16,6 +16,7 @@
     delete_request_store: s3
   ```
 - [ ] WAL e cache em volume no EBS.
+- [ ] Limite de gRPC em 16 MB (`grpc_server_max_recv_msg_size` e `grpc_server_max_send_msg_size`): com o padrão de 4 MB, uma consulta de 5.000 linhas de WAF dá erro (task 2.4).
 
 ## Pronto quando
 
