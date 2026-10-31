@@ -309,6 +309,14 @@ Exemplos de consulta:
 {env="production"} | json | level="ERROR"
 ```
 
+Para ler sem o JSON inteiro, `line_format` mostra só host, nível e mensagem (`message` no backend em JSON, `log` nas linhas em texto):
+
+```logql
+{env="production", origin="container-logs"} | json | line_format "{{.host}} {{.level}} {{.message}}{{.log}}"
+```
+
+O dashboard "Logs" (provisionado, task 2.5) traz a mesma consulta com filtros por `service`, `host`, `origin` e `level` e o volume por nível.
+
 ---
 
 ## 5. Pipeline de traces
