@@ -18,6 +18,13 @@
 - [ ] O marshaler `body` grava uma linha por registro (Athena consegue ler).
 - [ ] Com o Loki parado alguns minutos, `loki_write_dropped_bytes_total` continua 0.
 
+**Resultado no lab (2026-10-30, Alloy v1.21.3, Fluent Bit 3.2 com logs de teste):**
+- O marshaler `body` grava uma linha por registro, e o Athena leu as três tabelas (`athena/logs-raw.sql`).
+- **Exceção:** um registro de slow query do RDS tem várias linhas, então ocupa várias linhas em `logs_raw_rds`.
+- Com o Loki parado por ~3 min, `loki_write_dropped_bytes_total` ficou em 0 e os 5 logs chegaram depois.
+- Com a EC2 de observabilidade parada, os logs ficaram no buffer do Fluent Bit e chegaram com o horário original.
+- **Falta:** validar com os logs reais do backend, que não foi implantado neste teste.
+
 ## Risco aceito
 
 O pendente do `loki.write` fica em memória: um restart do Alloy perde esses registros (WAL é experimental, desligado).

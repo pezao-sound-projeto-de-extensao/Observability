@@ -31,7 +31,7 @@ Cada task indica a **fase** do roadmap (§ 14): F1 logs, F2 tracing, F3 compleme
 - [2.1 Docker Compose base via Ansible](2-logs/01-compose-base.md) · F1
 - [2.2 Loki](2-logs/02-loki.md) · F1
 - [2.3 Alloy: logs dos containers e arquivo bruto no S3](2-logs/03-alloy-logs-containers.md) · F1
-- [2.4 Alloy: RDS e WAF via CloudWatch](2-logs/04-alloy-cloudwatch.md) · F1
+- [2.4 Leitor do CloudWatch: RDS e WAF](2-logs/04-alloy-cloudwatch.md) · F1
 - [2.5 Grafana, data source Loki e Live Tail](2-logs/05-grafana-loki-livetail.md) · F1
 
 **3-traces**

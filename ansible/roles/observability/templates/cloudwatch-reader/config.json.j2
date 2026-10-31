@@ -1,0 +1,27 @@
+{
+  "region": "{{ aws_region }}",
+  "state_file": "/var/lib/cloudwatch-reader/state.json",
+  "poll_interval_seconds": 15,
+  "initial_lookback_seconds": 3600,
+  "max_window_seconds": 900,
+  "sources": [
+    {
+      "log_group": "/aws/rds/instance/app-db/error",
+      "push_url": "http://alloy:3501/loki/api/v1/push",
+      "labels": {"env": "production", "origin": "rds-logs", "service": "rds", "host": "app-db"},
+      "lookback_seconds": 600
+    },
+    {
+      "log_group": "/aws/rds/instance/app-db/slowquery",
+      "push_url": "http://alloy:3501/loki/api/v1/push",
+      "labels": {"env": "production", "origin": "rds-logs", "service": "rds", "host": "app-db"},
+      "lookback_seconds": 600
+    },
+    {
+      "log_group": "aws-waf-logs-main-alb-waf",
+      "push_url": "http://alloy:3502/loki/api/v1/push",
+      "labels": {"env": "production", "origin": "waf-logs", "service": "waf", "host": "main-alb"},
+      "lookback_seconds": 120
+    }
+  ]
+}

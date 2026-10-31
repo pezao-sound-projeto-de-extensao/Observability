@@ -1,0 +1,109 @@
+// Containers: Fluent Bit -> Alloy. As 4 labels já chegam prontas.
+loki.source.api "fluentbit" {
+  http {
+    listen_address = "0.0.0.0"
+    listen_port    = 3500
+  }
+  use_incoming_timestamp = true
+  forward_to             = [loki.write.default.receiver, otelcol.receiver.loki.raw.receiver]
+}
+
+// RDS e WAF: o leitor do CloudWatch envia para cá, já com as 4 labels (task 2.4).
+// Uma porta por origem para separar o arquivo bruto. Portas só na rede do Compose.
+loki.source.api "rds" {
+  http {
+    listen_address = "0.0.0.0"
+    listen_port    = 3501
+  }
+  use_incoming_timestamp = true
+  forward_to             = [loki.write.default.receiver, otelcol.receiver.loki.raw_rds.receiver]
+}
+
+loki.source.api "waf" {
+  http {
+    listen_address = "0.0.0.0"
+    listen_port    = 3502
+  }
+  use_incoming_timestamp = true
+  forward_to             = [loki.write.default.receiver, otelcol.receiver.loki.raw_waf.receiver]
+}
+
+loki.write "default" {
+  endpoint {
+    url                 = "http://loki:3100/loki/api/v1/push"
+    max_backoff_retries = 0 // tenta indefinidamente enquanto o Loki reinicia
+  }
+}
+
+otelcol.receiver.loki "raw" {
+  output {
+    logs = [otelcol.processor.batch.raw_containers.input]
+  }
+}
+
+otelcol.receiver.loki "raw_rds" {
+  output {
+    logs = [otelcol.processor.batch.raw_rds.input]
+  }
+}
+
+otelcol.receiver.loki "raw_waf" {
+  output {
+    logs = [otelcol.processor.batch.raw_waf.input]
+  }
+}
+
+// Arquivo bruto. O batch evita um objeto no S3 a cada push e fica fora do caminho do Live Tail.
+otelcol.processor.batch "raw_containers" {
+  timeout = "60s"
+  output {
+    logs = [otelcol.exporter.awss3.containers.input]
+  }
+}
+
+otelcol.processor.batch "raw_rds" {
+  timeout = "60s"
+  output {
+    logs = [otelcol.exporter.awss3.rds.input]
+  }
+}
+
+otelcol.processor.batch "raw_waf" {
+  timeout = "60s"
+  output {
+    logs = [otelcol.exporter.awss3.waf.input]
+  }
+}
+
+otelcol.exporter.awss3 "containers" {
+  s3_uploader {
+    region    = "{{ aws_region }}"
+    s3_bucket = "{{ buckets['logs-raw'] }}"
+    s3_prefix = "origin=container-logs"
+  }
+  marshaler {
+    type = "body"
+  }
+}
+
+otelcol.exporter.awss3 "rds" {
+  s3_uploader {
+    region    = "{{ aws_region }}"
+    s3_bucket = "{{ buckets['logs-raw'] }}"
+    s3_prefix = "origin=rds-logs"
+  }
+  marshaler {
+    type = "body"
+  }
+}
+
+otelcol.exporter.awss3 "waf" {
+  s3_uploader {
+    region    = "{{ aws_region }}"
+    s3_bucket = "{{ buckets['logs-raw'] }}"
+    s3_prefix = "origin=waf-logs"
+  }
+  marshaler {
+    type = "body"
+  }
+}
