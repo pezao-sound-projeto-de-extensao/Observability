@@ -349,9 +349,9 @@ Os atributos de recurso usam os **mesmos valores das labels do Loki**, para que 
 | Atributo do span | Valor | Label/campo no Loki |
 |---|---|---|
 | `service.name` | `app` | label `service="app"` (tag do driver `fluentd`) |
-| `host.name` | `app-1` / `app-2` (`inventory_hostname`) | label `host` (`record host {{ inventory_hostname }}` no Fluent Bit) |
-| `cloud.availability_zone` | `a` / `b` (variável `az` do inventário) | — (`host` já identifica a AZ: `app-1` = a, `app-2` = b) |
-| `service.instance.id` | `app-1-1`, `app-1-2`, `app-2-1`, `app-2-2` (host + slot do Swarm) | campo `container_name` na linha (`/stockflow_app.<slot>.<task>`, adicionado pelo driver `fluentd`) |
+| `host.name` | `app-1-a` / `app-2-b` (`inventory_hostname` + `az`) | label `host` (`record host {{ inventory_hostname }}-{{ az }}` no Fluent Bit) |
+| `cloud.availability_zone` | `a` / `b` (variável `az` do inventário) | — (o `host` já traz a AZ no fim: `app-1-a`, `app-2-b`) |
+| `service.instance.id` | `app-1-a-1`, `app-1-a-2`, `app-2-b-1`, `app-2-b-2` (host + slot do Swarm) | campo `container_name` na linha (`/stockflow_app.<slot>.<task>`, adicionado pelo driver `fluentd`) |
 
 Variáveis no `docker-compose.yml.j2`. O Ansible renderiza o arquivo por host (`inventory_hostname`, `az`), e o Swarm preenche o slot (`{{.Task.Slot}}`, envolto em `{% raw %}` para o Jinja não interpretar):
 
@@ -448,7 +448,7 @@ otelcol.exporter.otlphttp "tempo" {
 Os backends devem incluir `trace_id` e `span_id` nos logs estruturados. O OTel Agent coloca os dois no MDC do Logback, e o structured logging do Spring os grava no JSON (seção 4.2). A linha que chega ao Loki fica assim (o Fluent Bit gera JSON compacto, sem espaços):
 
 ```json
-{"@timestamp":"2026-10-23T13:30:11.482Z","level":"ERROR","logger_name":"...PedidoService","message":"Falha ao reservar estoque","trace_id":"4bf92f3577b34da6a3ce929d0e0e4736","span_id":"00f067aa0ba902b7","container_name":"/stockflow_app.2.k3j9x...","env":"production","host":"app-1","origin":"container-logs","service":"app"}
+{"@timestamp":"2026-10-23T13:30:11.482Z","level":"ERROR","logger_name":"...PedidoService","message":"Falha ao reservar estoque","trace_id":"4bf92f3577b34da6a3ce929d0e0e4736","span_id":"00f067aa0ba902b7","container_name":"/stockflow_app.2.k3j9x...","env":"production","host":"app-1-a","origin":"container-logs","service":"app"}
 ```
 
 No Grafana, a correlação é provisionada por arquivo (`provisioning/datasources/`), com UIDs fixos para que um data source referencie o outro:
@@ -475,7 +475,7 @@ datasources:
     type: tempo
     url: http://tempo:3200
     jsonData:
-      # Trace → Logs: monta {service="app", host="app-1"} |= "<trace_id>"
+      # Trace → Logs: monta {service="app", host="app-1-a"} |= "<trace_id>"
       tracesToLogsV2:
         datasourceUid: loki
         tags:
@@ -498,14 +498,14 @@ O `tracesToLogsV2` exige um seletor de stream, e ele só encontra logs porque `s
 Com isso, é possível navegar:
 
 ```text
-Log de erro no Loki (host=app-1 → AZ a; container_name → réplica)
+Log de erro no Loki (host=app-1-a → EC2 app-1, AZ a; container_name → réplica)
     └── clique no trace_id
-        └── Trace no Tempo (service.instance.id=app-1-2, cloud.availability_zone=a)
+        └── Trace no Tempo (service.instance.id=app-1-a-2, cloud.availability_zone=a)
             └── span com erro ou lentidão
                 └── logs daquela trace no container que a atendeu
 ```
 
-Para ver só os logs de uma réplica: `{service="app", host="app-1"} | json | container_name=~"/stockflow_app\\.2\\..*"`.
+Para ver só os logs de uma réplica: `{service="app", host="app-1-a"} | json | container_name=~"/stockflow_app\\.2\\..*"`.
 
 **Escopo:** só os logs do `app` gerados dentro de uma requisição (ou de um span manual) têm `trace_id`. RDS, WAF, nginx e RabbitMQ não são instrumentados, e logs de startup ou de jobs fora de um span também ficam sem ele. Para esses, a correlação é por horário (e por `host`, no caso de nginx e RabbitMQ).
 
@@ -765,7 +765,7 @@ Configuração apenas:
 1. No Live Tail do Loki, aparece:
 
 ```json
-{"level":"ERROR","logger_name":"...PedidoService","message":"Falha ao reservar estoque","trace_id":"4bf92f3577b34da6a3ce929d0e0e4736","host":"app-1","container_name":"/stockflow_app.2.k3j9x...",...}
+{"level":"ERROR","logger_name":"...PedidoService","message":"Falha ao reservar estoque","trace_id":"4bf92f3577b34da6a3ce929d0e0e4736","host":"app-1-a","container_name":"/stockflow_app.2.k3j9x...",...}
 ```
 
    Já se sabe que foi a réplica 2 do `app-1`, na AZ a.
@@ -1336,7 +1336,7 @@ Liberar a porta `9999` no security group para as EC2 de app (seção 6.3).
 
 | Alerta | Consulta | Significado |
 |---|---|---|
-| Pipeline de logs parado | `absent_over_time({service="app", host="app-1"}[5m])` (LogQL; um por host) | Nenhum log do `app-1` em 5 min |
+| Pipeline de logs parado | `absent_over_time({service="app", host="app-1-a"}[5m])` (LogQL; um por host) | Nenhum log do `app-1` em 5 min |
 | Alloy não entrega ao Loki | `rate(fluentbit_output_retries_total[5m]) > 0` por 5 min | Fluent Bit acumulando no buffer em disco |
 | Descarte no Alloy | `increase(loki_write_dropped_bytes_total[5m]) > 0` | Logs perdidos entre Alloy e Loki |
 | Disco da EC2 | `node_filesystem_avail_bytes{mountpoint="/host/root"} / node_filesystem_size_bytes < 0.15` | WAL e TSDB podem encher o EBS |

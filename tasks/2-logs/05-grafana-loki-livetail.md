@@ -16,12 +16,12 @@
     ```logql
     sum by (level) (count_over_time({env="production", service=~"$service", host=~"$host", origin=~"$origin"} | json | drop __error__, __error_details__ | level=~"$level" [$__auto]))
     ```
-    O `drop` é necessário porque o RDS manda texto puro: o `| json` marca `__error__` nessas linhas, e uma consulta de métrica falha inteira com esse erro. Linhas sem `level` entram em `level=`.
+    O `drop` é necessário porque o RDS manda texto puro: o `| json` marca `__error__` nessas linhas, e uma consulta de métrica falha inteira com esse erro. As linhas sem `level` (nginx, WAF, RDS e texto do app) recebem o nível no Alloy (`loki.process "level"`, como structured metadata): status HTTP no nginx, `BLOCK` no WAF, `[ERROR]`/`[Warning]` no RDS, exception ou `ERROR`/`WARN` no texto do app; o resto vira `INFO`.
   - Painel de logs (ordem decrescente, sem quebra de linha), com o JSON completo ao expandir a linha:
     ```logql
-    {env="production", service=~"$service", host=~"$host", origin=~"$origin"} | json | level=~"$level" | line_format `{{.host}} {{.level}} {{if or .message .log}}{{.message}}{{.log}}{{else}}{{__line__}}{{end}}`
+    {env="production", service=~"$service", host=~"$host", origin=~"$origin"} | json | level=~"$level" | line_format `{{.host}} {{if eq .origin "waf-logs"}}{{.action}} {{.httpRequest_httpMethod}} {{.httpRequest_uri}} {{.httpRequest_clientIp}} {{.httpRequest_country}} {{.terminatingRuleId}}{{else if .request_uri}}{{.status}} {{.request_method}} {{.request_uri}} {{.request_time}}s {{.remote_addr}}{{else}}{{.level}} {{if or .message .log}}{{.message}}{{.log}}{{else}}{{__line__}}{{end}}{{end}}`
     ```
-    `{{.message}}` vem do JSON do backend (task 1.5) e `{{.log}}` das linhas em texto (nginx, rabbitmq e o backend antes da 1.5); só um dos dois existe em cada linha. RDS e WAF não têm nenhum dos dois e mostram a linha original (`__line__`). A cor por nível depende da 1.5; o link para a trace depende da 1.5 e do derived field da 3.2.
+    `{{.message}}` vem do JSON do backend (task 1.5) e `{{.log}}` das linhas em texto (nginx, rabbitmq e o backend antes da 1.5); só um dos dois existe em cada linha. O WAF mostra ação, método, URI, IP, país e regra; o nginx (JSON sem `message`/`log`) mostra status, método, URI, tempo e IP de origem; o RDS, em texto, mostra a linha original (`__line__`). A cor por nível depende da 1.5; o link para a trace depende da 1.5 e do derived field da 3.2.
   - O JSON fica em `ansible/roles/observability/files/grafana/provisioning/dashboards/Logs/` e é copiado sem passar pelo Jinja, que quebraria no `{{ }}`.
 
 ## Pronto quando

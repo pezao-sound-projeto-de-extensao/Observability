@@ -43,6 +43,15 @@ Navegador ──> ALB :80 /collect ──> Alloy :12347 ──┬──> Loki  (
     url: '$${__value.raw}'
   ```
 
+### Logs do container do front (nginx do `web`)
+O Faro cobre o navegador; os logs do servidor do front (nginx que serve o `dist`, em `web-1`/`web-2`) hoje **não são coletados**: o serviço `web` não tem `logging` no compose, e o Fluent Bit só roda nos nós app (`node.role == manager`).
+- [ ] Repo infra (`DevOps`), `docker-compose.yml.j2`: Fluent Bit com `deploy: mode: global` (em vez de `*back`), para rodar também nos nós web; `logging` fluentd com `tag: web` no serviço `web`. Usar `service="web"` no Loki, não `frontend` (já é do Faro).
+- [ ] `deploy.yml`: renderizar `fluent-bit.conf.j2` em `/opt/app/fluent-bit/` nos nós web **antes** do `stack deploy`. O `otel_endpoint_ip` só existe em `group_vars/app.yml`: passar com `hostvars[groups['app'][0]].otel_endpoint_ip`.
+- [ ] Host no padrão EC2 + AZ, igual aos nós app: `web-1-a`, `web-2-b` (`{{ inventory_hostname }}-{{ az }}`).
+- [ ] Repo observabilidade, `terraform/compute.tf`: liberar 3500 (logs) e 9999 (métricas do Fluent Bit) também para o `web-sg` (`data "aws_security_group" "web"`). Hoje o mapa `ingress` aceita um SG por porta: trocar o valor por lista.
+- [ ] Alloy, `loki.process "level"`: incluir `web` no `INFO` padrão e classificar o formato texto do nginx (`combined`): status 5xx → `ERROR`, 4xx → `WARN` (ex.: `|~ "HTTP/[0-9.]+.{1,2} 5[0-9][0-9] "`, o `.{1,2}` absorve o `\"` do JSON do Fluent Bit); `[error]` → `ERROR`, `[warn]` → `WARN` no log de erro do nginx.
+- [ ] O `/health` do front já tem `access_log off` no `Dockerfile`: o health check do ALB não polui.
+
 ## Segurança
 
 O `/collect` é o único endpoint de ingestão **público**. Mitigações: rate limit e limite de payload no receiver, WAF no ALB. Risco aceito: ruído nos dados do frontend.
@@ -51,3 +60,4 @@ O `/collect` é o único endpoint de ingestão **público**. Mitigações: rate 
 
 - Navegando no frontend, aparece uma trace que começa em `frontend` e termina no `SELECT` do RDS, e a aresta `frontend → app` no service graph.
 - `{service="frontend"} | logfmt | kind="exception"` e `kind="measurement"` com dados.
+- `{service="web"}` com `host` `web-1-a` e `web-2-b`, e nível preenchido (sem `unknown`) no dashboard "Logs".

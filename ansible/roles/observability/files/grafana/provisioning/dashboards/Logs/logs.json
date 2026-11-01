@@ -82,7 +82,14 @@
             "stacking": { "mode": "normal", "group": "A" }
           }
         },
-        "overrides": []
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "level=ERROR" }, "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "#E24D42" } }] },
+          { "matcher": { "id": "byName", "options": "level=WARN" }, "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "#EAB839" } }] },
+          { "matcher": { "id": "byName", "options": "level=INFO" }, "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "#7EB26D" } }] },
+          { "matcher": { "id": "byName", "options": "level=DEBUG" }, "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "#1F78C1" } }] },
+          { "matcher": { "id": "byName", "options": "level=TRACE" }, "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "#6ED0E0" } }] },
+          { "matcher": { "id": "byName", "options": "level=" }, "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "#8E8E8E" } }] }
+        ]
       },
       "options": {
         "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true },
@@ -121,7 +128,7 @@
           "datasource": { "type": "loki", "uid": "loki" },
           "queryType": "range",
           "editorMode": "code",
-          "expr": "{env=\"production\", service=~\"$service\", host=~\"$host\", origin=~\"$origin\"} | json | level=~\"$level\" | line_format `{{.host}} {{.level}} {{if or .message .log}}{{.message}}{{.log}}{{else}}{{__line__}}{{end}}`"
+          "expr": "{env=\"production\", service=~\"$service\", host=~\"$host\", origin=~\"$origin\"} | json | level=~\"$level\" | line_format `{{.host}} {{if eq .origin \"waf-logs\"}}{{.action}} {{.httpRequest_httpMethod}} {{.httpRequest_uri}} {{.httpRequest_clientIp}} {{.httpRequest_country}} {{.terminatingRuleId}}{{else if .request_uri}}{{.status}} {{.request_method}} {{.request_uri}} {{.request_time}}s {{.remote_addr}}{{else}}{{.level}} {{if or .message .log}}{{.message}}{{.log}}{{else}}{{__line__}}{{end}}{{end}}`"
         }
       ]
     }
