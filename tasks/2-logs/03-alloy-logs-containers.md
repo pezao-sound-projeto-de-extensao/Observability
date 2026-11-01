@@ -15,8 +15,8 @@
 
 ## Validar
 
-- [ ] O marshaler `body` grava uma linha por registro (Athena consegue ler).
-- [ ] Com o Loki parado alguns minutos, `loki_write_dropped_bytes_total` continua 0.
+- [x] O marshaler `body` grava uma linha por registro (Athena consegue ler).
+- [x] Com o Loki parado alguns minutos, `loki_write_dropped_bytes_total` continua 0.
 
 **Resultado no lab (2026-10-30, Alloy v1.21.3, Fluent Bit 3.2 com logs de teste):**
 - O marshaler `body` grava uma linha por registro, e o Athena leu as três tabelas (`athena/logs-raw.sql`).

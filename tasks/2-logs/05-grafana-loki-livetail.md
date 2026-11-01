@@ -33,6 +33,7 @@ Em **Explore → Loki → Live**, dados chegando em ~1–3 s (containers) e até
 {env="production", origin="container-logs"}
 {env="production", origin="waf-logs"} |= "BLOCK"
 {env="production"} | json | level="ERROR"
+{env="production", origin="container-logs"} | json | line_format "{{.host}} {{.level}} {{.message}}{{.log}}"
 ```
 
 O dashboard "Logs" abre com os filtros prontos; o Live Tail do Explore não usa dashboard, então a formatação fica no `line_format` da consulta.

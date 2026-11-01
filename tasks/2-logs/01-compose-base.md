@@ -5,10 +5,10 @@
 ## O que fazer
 
 - [ ] Role Ansible que instala Docker + Compose na EC2 (mesmo padrão EC2 + Ansible + Docker do projeto).
-- [ ] `docker-compose.yml` com um container por componente. Na F1: `alloy`, `loki`, `grafana`; os outros entram nas tasks 3.1, 4.1 e 5.1.
+- [ ] `docker-compose.yml` com um container por componente. Na F1: `alloy`, `cloudwatch-reader` (task 2.4), `loki`, `grafana`; os outros entram nas tasks 3.1, 4.1 e 5.1.
 - [ ] Em todos os serviços:
   - `restart: unless-stopped` (as EC2 param no fim de cada sessão do lab).
-  - `mem_limit`: alloy 768m, loki 1g, tempo 1g, mimir 1g, pyroscope 768m, grafana 512m (com 256m, o Grafana 13.3 sofreu OOM em loop na subida; estabilizou em ~360 MiB).
+  - `mem_limit`: alloy 768m, cloudwatch-reader 256m, loki 1g, tempo 1g, mimir 1g, pyroscope 768m, grafana 512m (com 256m, o Grafana 13.3 sofreu OOM em loop na subida; estabilizou em ~360 MiB).
   - Volume nomeado para dados, no EBS.
   - **Imagens com versão fixada**.
 - [ ] Publicar no host só as portas do `alloy` (3500, 4318, 4040, 9999, 12347, 12345) e a `3000` do `grafana`. Loki, Tempo, Mimir e Pyroscope **não** publicam portas (sem autenticação).

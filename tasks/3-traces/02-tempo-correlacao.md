@@ -9,10 +9,12 @@
   ```yaml
   derivedFields:
     - name: trace_id
-      matcherRegex: '"trace_id":\s*"(\w+)"'
+      matcherType: label       # campo do | json, não regex no texto da linha
+      matcherRegex: trace_id
       datasourceUid: tempo
       url: '$${__value.raw}'   # $$ escapa a interpolação do provisioning
   ```
+  Com regex no texto, o link some quando a consulta usa `line_format` (dashboard "Logs", task 2.5). Exige `| json` na consulta. Conferir a sintaxe no Grafana fixado.
 - [ ] No Tempo, `tracesToLogsV2` (trace → logs):
   - `datasourceUid: loki`
   - tags `service.name → service`, `host.name → host`
