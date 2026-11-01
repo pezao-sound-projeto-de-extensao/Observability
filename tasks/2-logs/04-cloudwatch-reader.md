@@ -50,7 +50,7 @@ Comparação evento a evento entre o CloudWatch e o Loki, e contagem de linhas n
 **O que não foi medido:**
 - **Error log do RDS:** eventos reais só no boot (entregues em até 138 s) e um aviso, lido 10 s depois. Senha errada não vai para esse log. A estimativa de até ~2,5 min é a entrega medida mais o polling.
 - **Carga:** o teste usou um script Python com 30 conexões, não o k6. Sem o app, o ALB respondeu 403 e 429.
-- **Live Tail:** o leitor não foi conferido no navegador.
+- **Live Tail:** conferido no navegador só em 2026-11-01, com WAF e slow query do RDS (task 2.5).
 
 ## Limites conhecidos
 
