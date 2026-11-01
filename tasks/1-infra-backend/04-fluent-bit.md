@@ -29,9 +29,9 @@
       uri    /api/v1/metrics/write
       add_label host {{ inventory_hostname }}
   ```
-- [ ] Listar os nomes das métricas geradas na versão 3.2 e passar para quem faz os alertas (task 4.4).
+- [x] Listar os nomes das métricas geradas na versão 3.2 e passar para quem faz os alertas (task 4.4).
 
 ## Pronto quando
 
 - Sem a stack no ar, os chunks se acumulam em `/fluent-bit/buffer` sem descarte; com o Alloy no ar (task 2.3), são entregues com o horário original.
-- `fluentbit_output_retries_total` (ou o nome real) aparece no Mimir.
+- `fluentbit_output_retries_total` aparece no Mimir.

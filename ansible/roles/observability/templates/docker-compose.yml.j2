@@ -1,0 +1,62 @@
+name: observability
+
+services:
+  alloy:
+    image: grafana/alloy:{{ alloy_version }}
+    restart: unless-stopped
+    mem_limit: 768m
+    command:
+      - run
+      - /etc/alloy/config.alloy
+      - --server.http.listen-addr=0.0.0.0:12345
+      - --storage.path=/var/lib/alloy/data
+      - --stability.level=experimental
+    ports:
+      - "3500:3500"
+      - "4318:4318"
+      - "4040:4040"
+      - "9999:9999"
+      - "12347:12347"
+      - "12345:12345"
+    volumes:
+      # Diretório, não arquivo: o Ansible troca o inode e o /-/reload veria a config antiga
+      - ./alloy:/etc/alloy:ro
+      - alloy-data:/var/lib/alloy/data
+
+  # Imagem gerada pelo Ansible com docker build: o Docker do dnf não traz o buildx, exigido pelo build do Compose
+  cloudwatch-reader:
+    image: cloudwatch-reader:local
+    restart: unless-stopped
+    mem_limit: 256m
+    volumes:
+      - ./cloudwatch-reader/config:/etc/cloudwatch-reader:ro
+      - cloudwatch-reader-data:/var/lib/cloudwatch-reader
+
+  loki:
+    image: grafana/loki:{{ loki_version }}
+    restart: unless-stopped
+    mem_limit: 1g
+    command:
+      - -config.file=/etc/loki/loki.yaml
+    volumes:
+      - ./loki:/etc/loki:ro
+      - loki-data:/loki
+
+  grafana:
+    image: grafana/grafana:{{ grafana_version }}
+    restart: unless-stopped
+    mem_limit: 512m # 256m não basta: o Grafana 13.3 sofre OOM ao carregar os plugins na subida
+    env_file: .env
+    environment:
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - grafana-data:/var/lib/grafana
+
+volumes:
+  alloy-data:
+  cloudwatch-reader-data:
+  loki-data:
+  grafana-data:

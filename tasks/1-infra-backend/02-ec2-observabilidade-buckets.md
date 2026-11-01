@@ -9,7 +9,7 @@ Toda a stack roda em uma única EC2 com Docker Compose. O repo de observabilidad
 ## O que fazer
 
 - [ ] Criar o repo de observabilidade (Terraform + Ansible).
-- [ ] EC2 `t3.large` (a `t3.medium` não comporta ~4,75 GB de limites; `t3.xlarge` é negada no lab):
+- [ ] EC2 `t3.large` (a `t3.medium` não comporta ~5,25 GiB de limites; `t3.xlarge` é negada no lab):
   - Subnet **privada**, sem IP público.
   - `private_ip` fixo, combinado com o repo infra (vira `otel_endpoint_ip`).
   - `LabInstanceProfile` (o lab não permite criar roles).

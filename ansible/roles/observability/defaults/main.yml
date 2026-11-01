@@ -1,0 +1,7 @@
+observability_dir: /opt/observability
+
+alloy_version: v1.21.3
+loki_version: 3.7.9
+grafana_version: 13.3.0
+
+grafana_admin_password: "{{ lookup('ansible.builtin.env', 'GRAFANA_ADMIN_PASSWORD') }}"

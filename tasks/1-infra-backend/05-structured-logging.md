@@ -20,5 +20,5 @@
 Um log de erro dentro de uma requisição chega ao Loki assim:
 
 ```json
-{"@timestamp":"...","level":"ERROR","logger_name":"...","message":"...","trace_id":"4bf92f...","span_id":"00f067...","container_name":"/stockflow_app.2...","env":"production","host":"app-1","origin":"container-logs","service":"app"}
+{"@timestamp":"...","level":"ERROR","logger_name":"...","message":"...","trace_id":"4bf92f...","span_id":"00f067...","container_name":"/stockflow_app.2...","env":"production","host":"app-1-a","origin":"container-logs","service":"app"}
 ```
