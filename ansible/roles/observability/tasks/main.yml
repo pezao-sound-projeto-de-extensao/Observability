@@ -17,6 +17,7 @@
     - cloudwatch-reader/image
     - loki
     - grafana/provisioning/datasources
+    - grafana/provisioning/dashboards
 
 - name: Gerar docker-compose.yml
   ansible.builtin.template:
@@ -76,6 +77,22 @@
     dest: "{{ observability_dir }}/grafana/provisioning/datasources/loki.yaml"
     mode: "0644"
   notify: Reiniciar Grafana
+
+- name: Gerar provider de dashboards do Grafana
+  ansible.builtin.template:
+    src: grafana/provisioning/dashboards/dashboards.yaml.j2
+    dest: "{{ observability_dir }}/grafana/provisioning/dashboards/dashboards.yaml"
+    mode: "0644"
+  notify: Reiniciar Grafana
+
+# copy, não template: o {{ }} do line_format e das legendas não é Jinja.
+# Sem restart: o provider relê os JSONs sozinho a cada 10 s
+- name: Copiar dashboards do Grafana
+  ansible.builtin.copy:
+    src: grafana/provisioning/dashboards/
+    dest: "{{ observability_dir }}/grafana/provisioning/dashboards/"
+    mode: "0644"
+    directory_mode: "0755"
 
 - name: Subir a stack
   ansible.builtin.command:
