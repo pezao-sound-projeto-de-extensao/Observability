@@ -5,7 +5,7 @@ loki.source.api "fluentbit" {
     listen_port    = 3500
   }
   use_incoming_timestamp = true
-  forward_to             = [loki.write.default.receiver, otelcol.receiver.loki.raw.receiver]
+  forward_to             = [loki.process.level.receiver, otelcol.receiver.loki.raw.receiver]
 }
 
 // RDS e WAF: o leitor do CloudWatch envia para cá, já com as 4 labels (task 2.4).
@@ -16,7 +16,7 @@ loki.source.api "rds" {
     listen_port    = 3501
   }
   use_incoming_timestamp = true
-  forward_to             = [loki.write.default.receiver, otelcol.receiver.loki.raw_rds.receiver]
+  forward_to             = [loki.process.level.receiver, otelcol.receiver.loki.raw_rds.receiver]
 }
 
 loki.source.api "waf" {
@@ -25,7 +25,81 @@ loki.source.api "waf" {
     listen_port    = 3502
   }
   use_incoming_timestamp = true
-  forward_to             = [loki.write.default.receiver, otelcol.receiver.loki.raw_waf.receiver]
+  forward_to             = [loki.process.level.receiver, otelcol.receiver.loki.raw_waf.receiver]
+}
+
+// Nível para as linhas sem campo level (nginx, WAF, RDS e texto do app), senão o Grafana mostra "unknown".
+// Vai como structured metadata, não label (cardinalidade). Os match seguintes sobrescrevem o anterior.
+loki.process "level" {
+  forward_to = [loki.write.default.receiver]
+
+  stage.match {
+    selector = `{service=~"nginx|waf|rds"}`
+    stage.template {
+      source   = "level"
+      template = "INFO"
+    }
+  }
+  stage.match {
+    selector = `{service="app"} != "\"level\":"`
+    stage.template {
+      source   = "level"
+      template = "INFO"
+    }
+  }
+  stage.match {
+    selector = `{service="nginx"} |~ "\"status\":4[0-9][0-9]"`
+    stage.template {
+      source   = "level"
+      template = "WARN"
+    }
+  }
+  stage.match {
+    selector = `{service="nginx"} |~ "\"status\":5[0-9][0-9]"`
+    stage.template {
+      source   = "level"
+      template = "ERROR"
+    }
+  }
+  stage.match {
+    selector = `{service="waf"} |= "\"action\":\"BLOCK\""`
+    stage.template {
+      source   = "level"
+      template = "WARN"
+    }
+  }
+  stage.match {
+    selector = `{service="rds"} |= "[Warning]"`
+    stage.template {
+      source   = "level"
+      template = "WARN"
+    }
+  }
+  stage.match {
+    selector = `{service="rds"} |= "[ERROR]"`
+    stage.template {
+      source   = "level"
+      template = "ERROR"
+    }
+  }
+  stage.match {
+    selector = `{service="app"} != "\"level\":" |~ "WARN"`
+    stage.template {
+      source   = "level"
+      template = "WARN"
+    }
+  }
+  stage.match {
+    selector = `{service="app"} != "\"level\":" |~ "Exception|Error|ERROR"`
+    stage.template {
+      source   = "level"
+      template = "ERROR"
+    }
+  }
+
+  stage.structured_metadata {
+    values = { level = "" }
+  }
 }
 
 loki.write "default" {

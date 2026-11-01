@@ -17,7 +17,7 @@ O agente instrumenta sem código: Spring MVC, JDBC/JPA, SQL, RestTemplate/WebCli
     OTEL_EXPORTER_OTLP_ENDPOINT: "http://{{ otel_endpoint_ip }}:4318"
     OTEL_RESOURCE_ATTRIBUTES: "host.name={{ inventory_hostname }},cloud.availability_zone={{ az }},service.instance.id={{ inventory_hostname }}-{% raw %}{{.Task.Slot}}{% endraw %}"
   ```
-- [ ] Os valores **precisam bater** com as labels do Loki (`service.name=app` ↔ `service="app"`, `host.name=app-1` ↔ `host="app-1"`), senão a correlação trace → logs não acha nada.
+- [ ] Os valores **precisam bater** com as labels do Loki (`service.name=app` ↔ `service="app"`, `host.name=app-1-a` ↔ `host="app-1-a"`), senão a correlação trace → logs não acha nada.
 - [ ] Manter sampling 100% (padrão `always_on`).
 
 ## Risco
@@ -28,4 +28,4 @@ Compatibilidade com Spring Boot 4 / Spring Framework 7: testar localmente antes 
 
 - A aplicação sobe normalmente com o agente.
 - Os logs passam a ter `trace_id`/`span_id` (task 1.5).
-- Spans e métricas chegam ao Alloy (task 3.1) com `host.name` `app-1`/`app-2`, não o ID do container.
+- Spans e métricas chegam ao Alloy (task 3.1) com `host.name` `app-1-a`/`app-2-b` (EC2 + AZ), não o ID do container.

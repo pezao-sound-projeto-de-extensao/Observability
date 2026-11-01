@@ -11,7 +11,7 @@
   | Alerta | Consulta |
   |---|---|
   | Componente fora do ar | `up{job=~"loki\|tempo\|mimir\|grafana"} == 0` por 2 min |
-  | Pipeline de logs parado (um por host) | `absent_over_time({service="app", host="app-1"}[5m])` |
+  | Pipeline de logs parado (um por host) | `absent_over_time({service="app", host="app-1-a"}[5m])` |
   | Alloy não entrega | `rate(fluentbit_output_retries_total[5m]) > 0` por 5 min |
   | Descarte no Alloy | `increase(loki_write_dropped_bytes_total[5m]) > 0` |
   | Disco da EC2 | `node_filesystem_avail_bytes{mountpoint="/"} / node_filesystem_size_bytes < 0.15` |
