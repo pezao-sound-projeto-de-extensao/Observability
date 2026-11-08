@@ -181,3 +181,37 @@ otelcol.exporter.awss3 "waf" {
     type = "body"
   }
 }
+
+otelcol.receiver.otlp "default" {
+  http {
+    endpoint = "0.0.0.0:4318"
+  }
+  output {
+    traces = [otelcol.processor.filter.healthcheck.input]
+  }
+}
+
+otelcol.processor.filter "healthcheck" {
+  error_mode = "ignore"
+  traces {
+    span = ["attributes[\"url.path\"] == \"/api/health\""]
+  }
+  output {
+    traces = [otelcol.processor.batch.default.input]
+  }
+}
+
+otelcol.processor.batch "default" {
+  output {
+    traces = [otelcol.exporter.otlphttp.tempo.input]
+  }
+}
+
+otelcol.exporter.otlphttp "tempo" {
+  client {
+    endpoint = "http://tempo:4318"
+    tls {
+      insecure = true
+    }
+  }
+}
