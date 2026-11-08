@@ -1,0 +1,23 @@
+server:
+  http_listen_port: 3200
+
+distributor:
+  receivers:
+    otlp:
+      protocols:
+        http:
+          endpoint: 0.0.0.0:4318
+
+storage:
+  trace:
+    backend: s3
+    wal:
+      path: /var/tempo/wal
+    s3:
+      bucket: {{ buckets['tempo-traces'] }}
+      endpoint: s3.{{ aws_region }}.amazonaws.com
+      region: {{ aws_region }}
+
+compactor:
+  compaction:
+    block_retention: 168h
