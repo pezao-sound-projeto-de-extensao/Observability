@@ -1,0 +1,170 @@
+apiVersion: 1
+# Lembrete: silenciar no Grafana > Alerting > Silences ao fim de cada sessão do lab.
+# Alerta "logs parados": duplicar para cada host, trocando o valor de host= e o uid.
+groups:
+  - orgId: 1
+    name: saude-pipeline
+    folder: Observabilidade
+    interval: 1m
+    rules:
+      - uid: comp-fora-do-ar
+        title: "Componente fora do ar"
+        condition: C
+        for: 2m
+        noDataState: OK
+        execErrState: Error
+        labels:
+          severity: critical
+        annotations:
+          summary: "Componente fora do ar"
+        data:
+          - refId: A
+            relativeTimeRange: {from: 600, to: 0}
+            datasourceUid: mimir
+            model:
+              refId: A
+              expr: 'up{job=~"loki|tempo|mimir|grafana"} == bool 0'
+              instant: true
+          - refId: B
+            datasourceUid: __expr__
+            model: {refId: B, type: reduce, expression: A, reducer: last}
+          - refId: C
+            datasourceUid: __expr__
+            model: {refId: C, type: threshold, expression: B, conditions: [{evaluator: {type: gt, params: [0]}}]}
+
+      - uid: logs-parados-app-1-a
+        title: "Pipeline de logs parado (app-1-a)"
+        condition: C
+        for: 0m
+        noDataState: OK
+        execErrState: Alerting
+        labels:
+          severity: critical
+        annotations:
+          summary: "Pipeline de logs parado no app-1-a"
+        data:
+          - refId: A
+            relativeTimeRange: {from: 300, to: 0}
+            datasourceUid: loki
+            model:
+              refId: A
+              expr: 'absent_over_time({service="app", host="app-1-a"}[5m])'
+              instant: true
+          - refId: B
+            datasourceUid: __expr__
+            model: {refId: B, type: reduce, expression: A, reducer: last}
+          - refId: C
+            datasourceUid: __expr__
+            model: {refId: C, type: threshold, expression: B, conditions: [{evaluator: {type: gt, params: [0]}}]}
+
+      - uid: alloy-nao-entrega
+        title: "Alloy/Fluent Bit não entrega"
+        condition: C
+        for: 5m
+        noDataState: OK
+        execErrState: Error
+        labels:
+          severity: warning
+        annotations:
+          summary: "Fluent Bit com retries persistentes"
+        data:
+          - refId: A
+            relativeTimeRange: {from: 600, to: 0}
+            datasourceUid: mimir
+            model:
+              refId: A
+              expr: 'rate(fluentbit_output_retries_total[5m]) > bool 0'
+              instant: true
+          - refId: B
+            datasourceUid: __expr__
+            model: {refId: B, type: reduce, expression: A, reducer: last}
+          - refId: C
+            datasourceUid: __expr__
+            model: {refId: C, type: threshold, expression: B, conditions: [{evaluator: {type: gt, params: [0]}}]}
+
+      - uid: alloy-descarte
+        title: "Descarte no Alloy"
+        condition: C
+        for: 0m
+        noDataState: OK
+        execErrState: Error
+        labels:
+          severity: critical
+        annotations:
+          summary: "Alloy descartando bytes para o Loki"
+        data:
+          - refId: A
+            relativeTimeRange: {from: 600, to: 0}
+            datasourceUid: mimir
+            model:
+              refId: A
+              expr: 'increase(loki_write_dropped_bytes_total[5m]) > bool 0'
+              instant: true
+          - refId: B
+            datasourceUid: __expr__
+            model: {refId: B, type: reduce, expression: A, reducer: last}
+          - refId: C
+            datasourceUid: __expr__
+            model: {refId: C, type: threshold, expression: B, conditions: [{evaluator: {type: gt, params: [0]}}]}
+
+      - uid: disco-ec2
+        title: "Disco da EC2 < 15%"
+        condition: C
+        for: 5m
+        noDataState: OK
+        execErrState: Error
+        labels:
+          severity: critical
+        annotations:
+          summary: "Disco da EC2 abaixo de 15% livre"
+        data:
+          - refId: A
+            relativeTimeRange: {from: 600, to: 0}
+            datasourceUid: mimir
+            model:
+              refId: A
+              expr: 'node_filesystem_avail_bytes{mountpoint="/"} / node_filesystem_size_bytes{mountpoint="/"} < bool 0.15'
+              instant: true
+          - refId: B
+            datasourceUid: __expr__
+            model: {refId: B, type: reduce, expression: A, reducer: last}
+          - refId: C
+            datasourceUid: __expr__
+            model: {refId: C, type: threshold, expression: B, conditions: [{evaluator: {type: gt, params: [0]}}]}
+
+      - uid: memoria-limite
+        title: "Memória perto do limite (>85%)"
+        condition: C
+        for: 5m
+        noDataState: OK
+        execErrState: Error
+        labels:
+          severity: warning
+        annotations:
+          summary: "Componente da stack usando >85% do mem_limit"
+        data:
+          - refId: A
+            relativeTimeRange: {from: 600, to: 0}
+            datasourceUid: mimir
+            model:
+              refId: A
+              # mem_limits do compose: alloy=768m loki=1g tempo=1g mimir=1g grafana=512m
+              expr: |
+                (
+                  process_resident_memory_bytes{job="alloy"}   / (768  * 1024 * 1024) > bool 0.85
+                  or
+                  process_resident_memory_bytes{job="loki"}    / (1024 * 1024 * 1024) > bool 0.85
+                  or
+                  process_resident_memory_bytes{job="tempo"}   / (1024 * 1024 * 1024) > bool 0.85
+                  or
+                  process_resident_memory_bytes{job="mimir"}   / (1024 * 1024 * 1024) > bool 0.85
+                  or
+                  process_resident_memory_bytes{job="grafana"} / (512  * 1024 * 1024) > bool 0.85
+                )
+              instant: true
+          - refId: B
+            datasourceUid: __expr__
+            model: {refId: B, type: reduce, expression: A, reducer: last}
+          - refId: C
+            datasourceUid: __expr__
+            model: {refId: C, type: threshold, expression: B, conditions: [{evaluator: {type: gt, params: [0]}}]}
