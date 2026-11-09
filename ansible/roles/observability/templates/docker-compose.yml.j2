@@ -22,6 +22,9 @@ services:
       # Diretório, não arquivo: o Ansible troca o inode e o /-/reload veria a config antiga
       - ./alloy:/etc/alloy:ro
       - alloy-data:/var/lib/alloy/data
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/host/root:ro
 
   # Imagem gerada pelo Ansible com docker build: o Docker do dnf não traz o buildx, exigido pelo build do Compose
   cloudwatch-reader:
@@ -52,16 +55,18 @@ services:
     volumes:
       - ./tempo:/etc/tempo:ro
       - tempo-data:/var/tempo
+      - tempo-generator:/var/tempo/generator
 
-  pyroscope:
-    image: grafana/pyroscope:{{ pyroscope_version }}
+  mimir:
+    image: grafana/mimir:{{ mimir_version }}
     restart: unless-stopped
-    mem_limit: 768m
+    mem_limit: 1g
     command:
-      - -config.file=/etc/pyroscope/pyroscope.yaml
+      - -target=all
+      - -config.file=/etc/mimir/mimir.yaml
     volumes:
-      - ./pyroscope:/etc/pyroscope:ro
-      - pyroscope-data:/data
+      - ./mimir:/etc/mimir:ro
+      - mimir-data:/data
 
   grafana:
     image: grafana/grafana:{{ grafana_version }}
@@ -84,5 +89,6 @@ volumes:
   cloudwatch-reader-data:
   loki-data:
   tempo-data:
-  pyroscope-data:
+  tempo-generator:
+  mimir-data:
   grafana-data:

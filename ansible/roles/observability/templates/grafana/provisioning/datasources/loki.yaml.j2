@@ -15,10 +15,6 @@ datasources:
           matcherRegex: trace_id
           datasourceUid: tempo
           url: '$${__value.raw}'
-        - name: trace_id_faro
-          matcherRegex: '\btrace(?:_id|ID)=(\w+)'
-          datasourceUid: tempo
-          url: '$${__value.raw}'
 
   - name: Tempo
     type: tempo
@@ -27,6 +23,8 @@ datasources:
     url: http://tempo:3200
     editable: false
     jsonData:
+      serviceMap:
+        datasourceUid: mimir
       tracesToLogsV2:
         datasourceUid: loki
         tags:
@@ -38,16 +36,17 @@ datasources:
         filterBySpanID: false
         spanStartTimeShift: -1m
         spanEndTimeShift: 1m
-      tracesToProfiles:
-        datasourceUid: pyroscope
-        profileTypeId: process_cpu:cpu:nanoseconds:cpu:nanoseconds
-        tags:
-          - key: service.name
-            value: service_name
 
-  - name: Pyroscope
-    type: grafana-pyroscope-datasource
-    uid: pyroscope
+  - name: Mimir
+    uid: mimir
+    type: prometheus
     access: proxy
-    url: http://pyroscope:4040
+    url: http://mimir:9009/prometheus
     editable: false
+    jsonData:
+      httpMethod: POST
+      exemplarTraceIdDestinations:
+        - name: trace_id    # label do OTel Agent
+          datasourceUid: tempo
+        - name: traceID     # label do metrics-generator do Tempo
+          datasourceUid: tempo
