@@ -34,7 +34,7 @@ loki.process "level" {
   forward_to = [loki.write.default.receiver]
 
   stage.match {
-    selector = `{service=~"nginx|waf|rds"}`
+    selector = `{service=~"nginx|waf|rds|web"}`
     stage.template {
       source   = "level"
       template = "INFO"
@@ -56,6 +56,34 @@ loki.process "level" {
   }
   stage.match {
     selector = `{service="nginx"} |~ "\"status\":5[0-9][0-9]"`
+    stage.template {
+      source   = "level"
+      template = "ERROR"
+    }
+  }
+  stage.match {
+    selector = `{service="web"} |~ "HTTP/[0-9.]+.{1,2} 4[0-9][0-9] "`
+    stage.template {
+      source   = "level"
+      template = "WARN"
+    }
+  }
+  stage.match {
+    selector = `{service="web"} |~ "HTTP/[0-9.]+.{1,2} 5[0-9][0-9] "`
+    stage.template {
+      source   = "level"
+      template = "ERROR"
+    }
+  }
+  stage.match {
+    selector = `{service="web"} |= "[warn]"`
+    stage.template {
+      source   = "level"
+      template = "WARN"
+    }
+  }
+  stage.match {
+    selector = `{service="web"} |~ "\\[(error|crit|alert|emerg)\\]"`
     stage.template {
       source   = "level"
       template = "ERROR"
@@ -99,6 +127,50 @@ loki.process "level" {
 
   stage.structured_metadata {
     values = { level = "" }
+  }
+}
+
+faro.receiver "frontend" {
+  server {
+    listen_address           = "0.0.0.0"
+    listen_port              = 12347
+    max_allowed_payload_size = "1MiB"
+    rate_limiting {
+      rate       = 50
+      burst_size = 100
+    }
+  }
+  output {
+    logs   = [loki.process.faro.receiver]
+    traces = [otelcol.processor.batch.default.input]
+  }
+}
+
+loki.process "faro" {
+  stage.static_labels {
+    values = {
+      env     = "production",
+      origin  = "frontend",
+      service = "frontend",
+    }
+  }
+  stage.label_keep {
+    values = ["env", "origin", "service"]
+  }
+  forward_to = [loki.write.default.receiver]
+}
+
+pyroscope.receive_http "backends" {
+  http {
+    listen_address = "0.0.0.0"
+    listen_port    = 4040
+  }
+  forward_to = [pyroscope.write.default.receiver]
+}
+
+pyroscope.write "default" {
+  endpoint {
+    url = "http://pyroscope:4040"
   }
 }
 
