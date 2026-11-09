@@ -42,6 +42,27 @@ services:
       - ./loki:/etc/loki:ro
       - loki-data:/loki
 
+  tempo:
+    image: grafana/tempo:{{ tempo_version }}
+    restart: unless-stopped
+    mem_limit: 1g
+    command:
+      - -target=all
+      - -config.file=/etc/tempo/tempo.yaml
+    volumes:
+      - ./tempo:/etc/tempo:ro
+      - tempo-data:/var/tempo
+
+  pyroscope:
+    image: grafana/pyroscope:{{ pyroscope_version }}
+    restart: unless-stopped
+    mem_limit: 768m
+    command:
+      - -config.file=/etc/pyroscope/pyroscope.yaml
+    volumes:
+      - ./pyroscope:/etc/pyroscope:ro
+      - pyroscope-data:/data
+
   grafana:
     image: grafana/grafana:{{ grafana_version }}
     restart: unless-stopped
@@ -49,6 +70,9 @@ services:
     env_file: .env
     environment:
       GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_USERS_DEFAULT_LANGUAGE: pt-BR
+      GF_USERS_DEFAULT_THEME: dark
+      GF_NEWS_NEWS_FEED_ENABLED: "false"
     ports:
       - "3000:3000"
     volumes:
@@ -59,4 +83,6 @@ volumes:
   alloy-data:
   cloudwatch-reader-data:
   loki-data:
+  tempo-data:
+  pyroscope-data:
   grafana-data:

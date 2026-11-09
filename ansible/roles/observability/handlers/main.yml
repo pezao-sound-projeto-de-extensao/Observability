@@ -20,6 +20,18 @@
     chdir: "{{ observability_dir }}"
   changed_when: true
 
+- name: Reiniciar Tempo
+  ansible.builtin.command:
+    cmd: docker compose restart tempo
+    chdir: "{{ observability_dir }}"
+  changed_when: true
+
+- name: Reiniciar Pyroscope
+  ansible.builtin.command:
+    cmd: docker compose restart pyroscope
+    chdir: "{{ observability_dir }}"
+  changed_when: true
+
 - name: Reiniciar Grafana
   ansible.builtin.command:
     cmd: docker compose restart grafana

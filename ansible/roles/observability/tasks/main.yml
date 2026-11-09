@@ -16,6 +16,8 @@
     - cloudwatch-reader/config
     - cloudwatch-reader/image
     - loki
+    - tempo
+    - pyroscope
     - grafana/provisioning/datasources
     - grafana/provisioning/dashboards
 
@@ -38,6 +40,20 @@
     dest: "{{ observability_dir }}/loki/loki.yaml"
     mode: "0644"
   notify: Reiniciar Loki
+
+- name: Gerar config do Tempo
+  ansible.builtin.template:
+    src: tempo/tempo.yaml.j2
+    dest: "{{ observability_dir }}/tempo/tempo.yaml"
+    mode: "0644"
+  notify: Reiniciar Tempo
+
+- name: Gerar config do Pyroscope
+  ansible.builtin.template:
+    src: pyroscope/pyroscope.yaml.j2
+    dest: "{{ observability_dir }}/pyroscope/pyroscope.yaml"
+    mode: "0644"
+  notify: Reiniciar Pyroscope
 
 - name: Gerar config do Alloy
   ansible.builtin.template:
