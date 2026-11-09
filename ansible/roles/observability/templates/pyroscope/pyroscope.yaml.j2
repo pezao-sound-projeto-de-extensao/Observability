@@ -1,0 +1,18 @@
+architecture_storage: v2
+
+storage:
+  backend: s3
+  s3:
+    endpoint: s3.{{ aws_region }}.amazonaws.com
+    region: {{ aws_region }}
+    bucket_name: {{ buckets['pyroscope-profiles'] }}
+    native_aws_auth_enabled: true
+
+limits:
+  retention_period: 7d
+
+self_profiling:
+  disable_push: true
+
+analytics:
+  reporting_enabled: false

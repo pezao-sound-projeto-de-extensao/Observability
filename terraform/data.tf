@@ -30,6 +30,11 @@ data "aws_security_group" "app" {
   name   = "app-sg"
 }
 
+data "aws_security_group" "web" {
+  vpc_id = data.aws_vpc.main.id
+  name   = "web-sg"
+}
+
 data "aws_security_group" "bastion" {
   vpc_id = data.aws_vpc.main.id
   name   = "bastion-sg"
