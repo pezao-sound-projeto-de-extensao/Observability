@@ -26,3 +26,18 @@ output "grafana_url" {
 output "otel_endpoint_ip" {
   value = aws_instance.observability.private_ip
 }
+
+resource "terraform_data" "configurando_observability" {
+  depends_on = [
+    local_file.ansible_inventory,
+    local_file.ansible_vars,
+    aws_instance.observability,
+  ]
+
+  triggers_replace = [aws_instance.observability.id]
+
+  provisioner "local-exec" {
+    working_dir = "${path.module}/../ansible"
+    command     = "ANSIBLE_HOST_KEY_CHECKING=False ANSIBLE_ROLES_PATH=roles ansible-playbook -i inventories/production/hosts.ini playbook.yml"
+  }
+}
