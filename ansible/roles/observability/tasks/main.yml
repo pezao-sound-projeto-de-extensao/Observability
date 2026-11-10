@@ -16,10 +16,11 @@
     - cloudwatch-reader/config
     - cloudwatch-reader/image
     - loki
+    - mimir
     - tempo
-    - pyroscope
     - grafana/provisioning/datasources
     - grafana/provisioning/dashboards
+    - grafana/provisioning/alerting
 
 - name: Gerar docker-compose.yml
   ansible.builtin.template:
@@ -48,12 +49,12 @@
     mode: "0644"
   notify: Reiniciar Tempo
 
-- name: Gerar config do Pyroscope
+- name: Gerar config do Mimir
   ansible.builtin.template:
-    src: pyroscope/pyroscope.yaml.j2
-    dest: "{{ observability_dir }}/pyroscope/pyroscope.yaml"
+    src: mimir/mimir.yaml.j2
+    dest: "{{ observability_dir }}/mimir/mimir.yaml"
     mode: "0644"
-  notify: Reiniciar Pyroscope
+  notify: Reiniciar Mimir
 
 - name: Gerar config do Alloy
   ansible.builtin.template:
@@ -109,6 +110,13 @@
     dest: "{{ observability_dir }}/grafana/provisioning/dashboards/"
     mode: "0644"
     directory_mode: "0755"
+
+- name: Copiar regras de alerta do Grafana
+  ansible.builtin.copy:
+    src: grafana/provisioning/alerting/
+    dest: "{{ observability_dir }}/grafana/provisioning/alerting/"
+    mode: "0644"
+  notify: Reiniciar Grafana
 
 - name: Subir a stack
   ansible.builtin.command:

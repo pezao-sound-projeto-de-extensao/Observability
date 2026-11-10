@@ -1,0 +1,65 @@
+multitenancy_enabled: false
+usage_stats:
+  enabled: false
+
+server:
+  http_listen_port: 9009
+  log_level: info
+
+# Credenciais via LabInstanceProfile (sem chaves explícitas)
+common:
+  storage:
+    backend: s3
+    s3:
+      endpoint: s3.{{ aws_region }}.amazonaws.com
+      region: {{ aws_region }}
+      bucket_name: {{ buckets['mimir-metrics'] }}
+
+# Prefixos distintos por exigência do Mimir
+blocks_storage:
+  storage_prefix: blocks
+  tsdb:
+    dir: /data/ingester
+  bucket_store:
+    sync_dir: /data/tsdb-sync
+
+ruler_storage:
+  storage_prefix: ruler
+
+alertmanager_storage:
+  storage_prefix: alertmanager
+
+ruler:
+  rule_path: /data/ruler
+
+alertmanager:
+  data_dir: /data/alertmanager
+
+compactor:
+  data_dir: /data/compactor
+  sharding_ring:
+    kvstore:
+      store: inmemory
+
+distributor:
+  ring:
+    instance_addr: 127.0.0.1
+    kvstore:
+      store: inmemory
+
+ingester:
+  ring:
+    instance_addr: 127.0.0.1
+    replication_factor: 1
+    kvstore:
+      store: inmemory
+
+store_gateway:
+  sharding_ring:
+    replication_factor: 1
+    kvstore:
+      store: inmemory
+
+limits:
+  compactor_blocks_retention_period: 15d
+  max_global_exemplars_per_user: 100000
