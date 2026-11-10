@@ -8,4 +8,4 @@ grafana_version: 13.3.0
 
 grafana_admin_password: "{{ lookup('ansible.builtin.env', 'GRAFANA_ADMIN_PASSWORD') }}"
 mimir_version: "3.2.3"
-discord_webhook_url: ""   # preencher no inventory ou na chamada do playbook
+discord_webhook_url: "{{ lookup('ansible.builtin.env', 'DISCORD_WEBHOOK_URL') }}"   # vazio = sem contact point do Discord

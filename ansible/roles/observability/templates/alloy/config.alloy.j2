@@ -283,7 +283,8 @@ otelcol.receiver.otlp "default" {
     endpoint = "0.0.0.0:4318"
   }
   output {
-    traces = [otelcol.processor.filter.healthcheck.input]
+    traces  = [otelcol.processor.filter.healthcheck.input]
+    metrics = [otelcol.exporter.prometheus.mimir.input]
   }
 }
 
@@ -321,11 +322,7 @@ otelcol.exporter.prometheus "mimir" {
   forward_to = [prometheus.remote_write.mimir.receiver]
 }
 
-// Liga o receiver OTLP existente às métricas (adiciona ao output do "default")
-// NOTA: o receiver "default" acima só declara traces; criamos um segundo receiver
-// exclusivo para métricas na porta 4318 (HTTP/proto aceita os dois sinais).
-// O agente Java envia métricas e traces no mesmo endpoint; o exporter prometheus
-// acima extrai só as métricas.
+// Ligado no output metrics do receiver "default": sem ele o /v1/metrics da 4318 dá 404
 
 prometheus.remote_write "mimir" {
   endpoint {
@@ -370,7 +367,8 @@ prometheus.scrape "stack" {
       {"__address__" = "loki:3100",    "job" = "loki"},
       {"__address__" = "tempo:3200",   "job" = "tempo"},
       {"__address__" = "mimir:9009",   "job" = "mimir"},
-      {"__address__" = "grafana:3000", "job" = "grafana"},
+      // Subpath: /metrics dá 301 para o ALB, e o Alloy sairia pelo NAT (WAF bloqueia como US)
+      {"__address__" = "grafana:3000", "job" = "grafana", "__metrics_path__" = "/grafana/metrics"},
       // task 5.1 soma: {"__address__" = "pyroscope:4040", "job" = "pyroscope"},
     ],
   )

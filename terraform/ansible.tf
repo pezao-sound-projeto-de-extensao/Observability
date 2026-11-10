@@ -39,6 +39,10 @@ resource "terraform_data" "configurando_observability" {
 
   provisioner "local-exec" {
     working_dir = "${path.module}/../ansible"
+    environment = {
+      GRAFANA_ADMIN_PASSWORD = var.grafana_admin_password
+      DISCORD_WEBHOOK_URL    = var.discord_webhook_url
+    }
     command     = "ANSIBLE_HOST_KEY_CHECKING=False ANSIBLE_ROLES_PATH=roles ansible-playbook -i inventories/production/hosts.ini playbook.yml"
   }
 }
