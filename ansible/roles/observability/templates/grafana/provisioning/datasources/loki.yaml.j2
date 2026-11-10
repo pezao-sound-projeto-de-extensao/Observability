@@ -15,6 +15,10 @@ datasources:
           matcherRegex: trace_id
           datasourceUid: tempo
           url: '$${__value.raw}'
+        - name: trace_id_faro
+          matcherRegex: '\btrace(?:_id|ID)=(\w+)'
+          datasourceUid: tempo
+          url: '$${__value.raw}'
 
   - name: Tempo
     type: tempo
@@ -36,6 +40,19 @@ datasources:
         filterBySpanID: false
         spanStartTimeShift: -1m
         spanEndTimeShift: 1m
+      tracesToProfiles:
+        datasourceUid: pyroscope
+        profileTypeId: process_cpu:cpu:nanoseconds:cpu:nanoseconds
+        tags:
+          - key: service.name
+            value: service_name
+
+  - name: Pyroscope
+    type: grafana-pyroscope-datasource
+    uid: pyroscope
+    access: proxy
+    url: http://pyroscope:4040
+    editable: false
 
   - name: Mimir
     uid: mimir

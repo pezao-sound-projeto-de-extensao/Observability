@@ -68,6 +68,16 @@ services:
       - ./mimir:/etc/mimir:ro
       - mimir-data:/data
 
+  pyroscope:
+    image: grafana/pyroscope:{{ pyroscope_version }}
+    restart: unless-stopped
+    mem_limit: 768m
+    command:
+      - -config.file=/etc/pyroscope/pyroscope.yaml
+    volumes:
+      - ./pyroscope:/etc/pyroscope:ro
+      - pyroscope-data:/data
+
   grafana:
     image: grafana/grafana:{{ grafana_version }}
     restart: unless-stopped
@@ -91,4 +101,5 @@ volumes:
   tempo-data:
   tempo-generator:
   mimir-data:
+  pyroscope-data:
   grafana-data:

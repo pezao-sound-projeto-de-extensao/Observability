@@ -37,3 +37,9 @@
     cmd: docker compose restart mimir
     chdir: "{{ observability_dir }}"
   changed_when: true
+
+- name: Reiniciar Pyroscope
+  ansible.builtin.command:
+    cmd: docker compose restart pyroscope
+    chdir: "{{ observability_dir }}"
+  changed_when: true
