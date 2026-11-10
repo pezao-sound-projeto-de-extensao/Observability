@@ -5,7 +5,21 @@ loki.source.api "fluentbit" {
     listen_port    = 3500
   }
   use_incoming_timestamp = true
-  forward_to             = [loki.process.level.receiver, otelcol.receiver.loki.raw.receiver]
+  forward_to             = [loki.process.health.receiver, otelcol.receiver.loki.raw.receiver]
+}
+
+// Health checks (ALB e healthcheck do Docker) fora do Loki; o arquivo bruto no S3 continua com tudo.
+loki.process "health" {
+  forward_to = [loki.process.level.receiver]
+
+  // nginx dos nós app: /api/health
+  stage.drop {
+    expression = `"request_uri":"/api/health"`
+  }
+  // nginx do web: curl do healthcheck do Docker em / (o /health do ALB já tem access_log off)
+  stage.drop {
+    expression = `127\.0\.0\.1 - - \[[^\]]*\] .{1,2}GET / HTTP/1\.1.{1,2} 200 .*curl/`
+  }
 }
 
 // RDS e WAF: o leitor do CloudWatch envia para cá, já com as 4 labels (task 2.4).
@@ -25,7 +39,17 @@ loki.source.api "waf" {
     listen_port    = 3502
   }
   use_incoming_timestamp = true
-  forward_to             = [loki.process.level.receiver, otelcol.receiver.loki.raw_waf.receiver]
+  forward_to             = [loki.process.waf_grafana.receiver, otelcol.receiver.loki.raw_waf.receiver]
+}
+
+// Cada requisição ao Grafana (inclusive o próprio Live Tail) gera uma linha no WAF: fora do Loki.
+// Só ALLOW: um BLOCK no Grafana interessa. O arquivo bruto no S3 continua com tudo.
+loki.process "waf_grafana" {
+  forward_to = [loki.process.level.receiver]
+
+  stage.drop {
+    expression = `"action":"ALLOW".*"uri":"/grafana`
+  }
 }
 
 // Nível para as linhas sem campo level (nginx, WAF, RDS e texto do app), senão o Grafana mostra "unknown".
