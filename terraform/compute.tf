@@ -45,7 +45,7 @@ resource "aws_instance" "observability" {
   vpc_security_group_ids = [aws_security_group.observability.id]
   key_name               = var.key_name
   iam_instance_profile   = "LabInstanceProfile"
-  depends_on = [terraform_data.buckets]
+  depends_on             = [terraform_data.buckets]
 
   associate_public_ip_address = false
 

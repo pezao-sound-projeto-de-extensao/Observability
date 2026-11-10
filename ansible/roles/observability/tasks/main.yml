@@ -121,9 +121,27 @@
 
 - name: Copiar regras de alerta do Grafana
   ansible.builtin.copy:
-    src: grafana/provisioning/alerting/
-    dest: "{{ observability_dir }}/grafana/provisioning/alerting/"
+    src: grafana/provisioning/alerting/rules.yaml
+    dest: "{{ observability_dir }}/grafana/provisioning/alerting/rules.yaml"
     mode: "0644"
+  notify: Reiniciar Grafana
+
+# Sem webhook o Grafana nem sobe (contact point sem url); os alertas caem na policy padrão
+- name: Copiar contact point e policy do Discord
+  ansible.builtin.copy:
+    src: grafana/provisioning/alerting/{{ item }}
+    dest: "{{ observability_dir }}/grafana/provisioning/alerting/{{ item }}"
+    mode: "0644"
+  loop: [contact-points.yaml, policies.yaml]
+  when: discord_webhook_url | length > 0
+  notify: Reiniciar Grafana
+
+- name: Remover contact point e policy do Discord sem webhook
+  ansible.builtin.file:
+    path: "{{ observability_dir }}/grafana/provisioning/alerting/{{ item }}"
+    state: absent
+  loop: [contact-points.yaml, policies.yaml]
+  when: discord_webhook_url | length == 0
   notify: Reiniciar Grafana
 
 - name: Subir a stack
