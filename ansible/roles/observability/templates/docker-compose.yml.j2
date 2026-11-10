@@ -85,6 +85,9 @@ services:
     env_file: .env
     environment:
       GF_USERS_ALLOW_SIGN_UP: "false"
+      # Servido em /grafana na porta 80 do ALB. O Live (WebSocket) confere a origem pelo root_url
+      GF_SERVER_ROOT_URL: "{{ grafana_root_url }}"
+      GF_SERVER_SERVE_FROM_SUB_PATH: "true"
       GF_USERS_DEFAULT_LANGUAGE: pt-BR
       GF_USERS_DEFAULT_THEME: dark
       GF_NEWS_NEWS_FEED_ENABLED: "false"

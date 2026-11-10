@@ -14,13 +14,14 @@ resource "local_file" "ansible_vars" {
   file_permission = "0644"
 
   content = yamlencode({
-    aws_region = var.aws_region
-    buckets    = { for k, b in terraform_data.buckets : k => b.output }
+    aws_region       = var.aws_region
+    grafana_root_url = "http://${data.aws_lb.main.dns_name}/grafana/"
+    buckets          = { for k, b in terraform_data.buckets : k => b.output }
   })
 }
 
 output "grafana_url" {
-  value = "http://${data.aws_lb.main.dns_name}:3000"
+  value = "http://${data.aws_lb.main.dns_name}/grafana/"
 }
 
 output "otel_endpoint_ip" {

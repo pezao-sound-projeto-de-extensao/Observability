@@ -97,7 +97,7 @@ Traces:      Backends ──> Alloy ──> Tempo ──> S3
 Métricas:    Backends ──> Alloy ──> Mimir ──> S3
              Tempo (metrics-generator) ──> Mimir
 
-Consulta:    Equipe ──> ALB :3000 ──> Grafana ──> Loki / Tempo / Mimir
+Consulta:    Equipe ──> ALB :80 /grafana ──> Grafana ──> Loki / Tempo / Mimir
 ```
 
 Alloy, Loki, Tempo, Mimir e Grafana rodam como containers separados em uma única **EC2 de observabilidade**, com Docker Compose.
@@ -118,7 +118,7 @@ O Grafana consulta o Loki, o Tempo e o Mimir (a stack LGTM: Loki, Grafana, Tempo
 | Mimir para métricas | Fecha a stack LGTM: os três backends guardam no S3 com o mesmo modelo. Recebe métricas por remote write (push), sem precisar descobrir os containers dos backends, e responde PromQL; integração nativa com Grafana e com o metrics-generator do Tempo. Monolítico, na arquitetura clássica (sem Kafka) |
 | Stack de observabilidade em uma EC2 com Docker Compose | Os componentes conversam pela rede Docker do Compose, dentro da EC2; os backends alcançam o Alloy pelo IP privado fixo da EC2. Nenhum balanceador ou service discovery entre eles (o lab bloqueia Cloud Map). Mesmo padrão EC2 + Ansible + Docker já usado no projeto |
 | Cada componente em seu próprio container | Deploy e restart independentes, com limite de memória por container |
-| Grafana exposto pelo `main-alb` existente | Listener `:3000` restrito aos IPs da equipe; a EC2 fica em subnet privada, sem IP público |
+| Grafana exposto pelo `main-alb` existente | Caminho `/grafana` no listener `:80`; a EC2 fica em subnet privada, sem IP público |
 | Sem ingestão de access logs do ALB | O ALB possui apenas regras simples de roteamento e balanceamento; logs de aplicação e traces já cobrem a investigação principal |
 
 ---
@@ -268,7 +268,7 @@ O Loki persiste os logs no Amazon S3.
 | Alloy → Loki | HTTP, push da API do Loki | 3100 | Rede do Compose |
 | Alloy, Loki, Tempo e Mimir → S3 | HTTPS | 443 | NAT gateway; um VPC gateway endpoint de S3 (gratuito) tiraria esse tráfego do NAT, que cobra por GB processado |
 | Grafana → Loki | HTTP; Live Tail por WebSocket (`/loki/api/v1/tail`) | 3100 | Rede do Compose |
-| Navegador → Grafana | HTTP via `main-alb`; Live Tail por WebSocket (o ALB aceita) | 3000 | Internet, restrito aos IPs da equipe |
+| Navegador → Grafana | HTTP via `main-alb`; Live Tail por WebSocket (o ALB aceita) | 80 (`/grafana`) | Internet |
 
 O trecho Fluent Bit → Alloy segue sem TLS, como o OTLP dos backends na porta `4318`: o tráfego não sai da VPC e o security group só aceita as EC2 de app.
 
@@ -519,7 +519,7 @@ Para ver só os logs de uma réplica: `{service="app", host="app-1-a"} | json | 
 |---|---|
 | EC2 (app) | Hospeda os containers de backend e o Fluent Bit (Docker Swarm, um por AZ) |
 | EC2 (observabilidade) | Hospeda Alloy, Loki, Tempo, Mimir e Grafana (Docker Compose) |
-| ALB | Distribui tráfego HTTP entre as AZs, encaminha requisições com prefixo `/api` e expõe o Grafana no listener `:3000` |
+| ALB | Distribui tráfego HTTP entre as AZs, encaminha requisições com prefixo `/api` e expõe o Grafana em `/grafana` |
 | RDS | Banco de dados relacional e fonte de logs de banco |
 | WAF | Proteção da aplicação e fonte de logs de segurança |
 | S3 | Armazenamento dos logs do Loki, das traces do Tempo, das métricas do Mimir e do arquivo bruto de logs |
@@ -560,7 +560,7 @@ EC2: observability (Docker Compose)
 
 - Dentro da EC2, os containers se chamam pelo nome na rede do Compose (`loki:3100`, `tempo:4318`, `tempo:3200`, `mimir:9009`).
 - Os backends enviam spans e métricas para o **IP privado fixo** da EC2 (`http://<ip-privado>:4318`), definido no Terraform (`private_ip`) e repassado ao Ansible como variável. O IP privado não muda quando a instância para e volta. O Fluent Bit usa o mesmo IP para enviar logs ao Alloy (`:3500`).
-- O Grafana é acessado pelo **`main-alb` existente**, em um listener `:3000` com target group do tipo `instance` apontando para a EC2 (health check em `/api/health`, endpoint nativo do Grafana). O WAF associado ao ALB também protege o Grafana.
+- O Grafana é acessado pelo **`main-alb` existente**, no caminho `/grafana` do listener `:80` (regra como a do `/collect`), com target group do tipo `instance` na porta 3000 da EC2 (health check em `/grafana/api/health`, endpoint nativo do Grafana). O Grafana roda com `serve_from_sub_path` e `root_url` no DNS do ALB. Um listener próprio na `:3000` foi descartado porque redes como a da faculdade bloqueiam portas fora do padrão. O WAF associado ao ALB também protege o Grafana.
 - Os spans **não** passam pelo ALB: o ALB é externo, e o tráfego dos backends sairia pelo NAT e voltaria pela internet. A comunicação backend → Alloy é direta, pelo IP privado.
 - Não há Cloud Map ou Route 53 envolvidos. O lab bloqueia Cloud Map (ver seção 16), e um endereço fixo dispensa descoberta de serviço.
 
@@ -577,11 +577,11 @@ EC2: observability (Docker Compose)
 | `12345` | Security group do ALB | Health check do target group do Faro (`/-/ready` do Alloy) |
 | `22` | Bastion | Ansible / SSH |
 
-No security group do ALB, a porta `3000` é liberada apenas para os IPs da equipe. Loki, Tempo e Mimir não publicam portas no host: só são acessíveis pela rede interna do Compose, já que não têm autenticação. O Grafana tem login próprio.
+Loki, Tempo e Mimir não publicam portas no host: só são acessíveis pela rede interna do Compose, já que não têm autenticação. O Grafana tem login próprio.
 
-**Limitação: Grafana em HTTP.** O listener `:3000` é HTTP, então o login do Grafana trafega sem criptografia. O lab não oferece domínio nem certificado ACM, e a restrição por IP reduz a exposição. Fora do lab, usar um listener HTTPS com certificado. Alternativa sem expor a porta: port forward pelo SSM Session Manager.
+**Limitação: Grafana em HTTP.** O listener `:80` é HTTP, então o login do Grafana trafega sem criptografia. O lab não oferece domínio nem certificado ACM. Fora do lab, usar um listener HTTPS com certificado. Alternativa sem expor a porta: port forward pelo SSM Session Manager.
 
-**WAF no Grafana:** o WAF do `main-alb` também se aplica ao `:3000`. As regras de rate limit por IP contam as requisições do Grafana (dashboards e Live Tail) junto com qualquer outro tráfego do mesmo IP (ver seção 17.2).
+**WAF no Grafana:** o WAF do `main-alb` também se aplica ao `/grafana`. As regras de rate limit por IP contam as requisições do Grafana (dashboards e Live Tail) junto com qualquer outro tráfego do mesmo IP (ver seção 17.2).
 
 **Credenciais AWS:** os containers usam o `LabInstanceProfile` (`LabRole`) via metadata da instância para CloudWatch Logs e S3. Com IMDSv2, o hop limit precisa ser 2 para que os containers alcancem o metadata.
 
@@ -796,7 +796,7 @@ Nesta primeira versão, **os access logs do ALB não serão coletados**.
 O ALB atual possui apenas:
 
 - Listener `:80` com o frontend (`web-tg`) como destino padrão e uma regra para `/api` e `/api/*` (`app-tg`, via nginx).
-- Listener `:3000` para o Grafana (adicionado por esta proposta).
+- Regra `/grafana` no listener `:80` para o Grafana (adicionada por esta proposta).
 - Balanceamento de carga entre duas Availability Zones.
 
 Como o roteamento é simples, sem autenticação no ALB nem redirecionamentos, o access log agregaria pouco valor imediato. Além disso, os logs e traces dos backends já mostram endpoint, status, latência, erros, queries e chamadas externas.
@@ -832,7 +832,7 @@ Caso seja necessário no futuro — por exemplo, para investigar 5xx percebidos 
 - Recriar no repo infra os log groups do RDS e do WAF, o export de logs do RDS (parameter group de slow query) e o logging do WAF. A PoC foi destruída, e hoje o repo não tem nenhum deles (código na seção 16).
 - Criar a EC2 de observabilidade (subnet privada, IP privado fixo, security group com `3500` para as EC2 de app) e instalar Docker Compose via Ansible.
 - Deploy do Fluent Bit com output `loki` e buffer em disco (já feito no repo DevOps; exige `otel_endpoint_ip`).
-- Adicionar listener `:3000` e target group do Grafana no `main-alb`.
+- Adicionar a regra `/grafana` e o target group do Grafana no `main-alb`.
 - Subir Alloy (containers e RDS/WAF → Loki e arquivo bruto no S3), Loki e Grafana no Compose.
 - Validar a retomada do `cloudwatch-reader` depois de parar a EC2.
 - Configurar retenção do Loki e lifecycle do bucket `logs-raw`.
@@ -871,7 +871,7 @@ Estimativa para 1 pessoa com experiência em Terraform e AWS.
 |---|---|
 | Log groups do RDS e WAF, export do RDS e logging do WAF (já validados na PoC) | 1 h |
 | Fluent Bit: output `loki` e buffer em disco (já feito e testado localmente) | 1 h (deploy) |
-| EC2 de observabilidade: Terraform (subnet privada, IP fixo, SG com `3500` e `4318`, listener `:3000` no ALB) + Docker Compose via Ansible | 4 h |
+| EC2 de observabilidade: Terraform (subnet privada, IP fixo, SG com `3500` e `4318`, regra `/grafana` no ALB) + Docker Compose via Ansible | 4 h |
 | Alloy: Fluent Bit → Loki (`loki.source.api`, timestamp, labels, retentativas) e arquivo bruto no S3 | 4 h |
 | Leitor próprio de RDS/WAF no CloudWatch (validar a retomada após parada da EC2) | 3 h |
 | Loki + S3 + retenção | 4 h |
@@ -905,7 +905,7 @@ Riscos: bloqueios do Learner Lab (reservar ~20% de folga), o componente experime
 Separar a observabilidade em um repositório próprio:
 
 - **Repo infra (`DevOps` atual):** VPC, RDS (export de logs), WAF (logging), os CloudWatch Log Groups, o `main-alb` e, no Ansible das EC2 de app, o Fluent Bit e as variáveis do OTel Agent. Os log groups, o export do RDS e o logging do WAF ainda precisam ser recriados (seção 14).
-- **Repo observabilidade (Terraform e Ansible):** buckets S3, a EC2 de observabilidade com seu security group, o listener `:3000` e o target group do Grafana no `main-alb`, e o Compose com Alloy, Loki, Tempo, Mimir e Grafana.
+- **Repo observabilidade (Terraform e Ansible):** buckets S3, a EC2 de observabilidade com seu security group, a regra `/grafana` e o target group do Grafana no `main-alb`, e o Compose com Alloy, Loki, Tempo, Mimir e Grafana.
 
 O repo de observabilidade localiza os recursos do repo infra por **data source por nome** (`data "aws_cloudwatch_log_group"`, `data "aws_lb"`, `data "aws_subnet"`), sem `terraform_remote_state`. O contrato entre os repos são valores combinados previamente:
 
