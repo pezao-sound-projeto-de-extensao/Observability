@@ -152,6 +152,18 @@ loki.process "level" {
   stage.structured_metadata {
     values = { level = "" }
   }
+
+  // trace_id do MDC (OTel Agent) vira structured metadata: o derived field "trace_id"
+  // do Grafana é por label, e sem isso o link para o Tempo só aparece com | json na query
+  stage.match {
+    selector = `{service="app"} |= "\"trace_id\":"`
+    stage.json {
+      expressions = { trace_id = "" }
+    }
+    stage.structured_metadata {
+      values = { trace_id = "" }
+    }
+  }
 }
 
 faro.receiver "frontend" {
