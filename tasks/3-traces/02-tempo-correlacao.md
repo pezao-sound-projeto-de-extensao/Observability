@@ -4,8 +4,8 @@
 
 ## O que fazer
 
-- [ ] Data source Tempo, `uid: tempo`, `url: http://tempo:3200`.
-- [ ] No Loki, derived field (log → trace):
+- [x] Data source Tempo, `uid: tempo`, `url: http://tempo:3200`.
+- [x] No Loki, derived field (log → trace):
   ```yaml
   derivedFields:
     - name: trace_id
@@ -15,7 +15,7 @@
       url: '$${__value.raw}'   # $$ escapa a interpolação do provisioning
   ```
   Com regex no texto, o link some quando a consulta usa `line_format` (dashboard "Logs", task 2.5). Exige `| json` na consulta. Conferir a sintaxe no Grafana fixado.
-- [ ] No Tempo, `tracesToLogsV2` (trace → logs):
+- [x] No Tempo, `tracesToLogsV2` (trace → logs):
   - `datasourceUid: loki`
   - tags `service.name → service`, `host.name → host`
   - `filterByTraceID: true`, `filterBySpanID: false`
@@ -24,7 +24,8 @@
 YAML completo na § 5.6.
 
 ### F3: link do slow query do RDS
-- [ ] Depois do sqlcommenter (task 1.7), segundo derived field no Loki:
+
+- [x] Depois do sqlcommenter (task 1.7, repo backend, já mergeado), segundo derived field no Loki:
   ```yaml
   - name: trace_id_sql
     matcherRegex: "traceparent='00-(\\w{32})-"

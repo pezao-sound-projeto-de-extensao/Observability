@@ -90,6 +90,8 @@ services:
       GF_USERS_DEFAULT_LANGUAGE: pt-BR
       GF_USERS_DEFAULT_THEME: dark
       GF_NEWS_NEWS_FEED_ENABLED: "false"
+      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /etc/grafana/provisioning/dashboards/inicio.json
+      # Nenhum app embutido sem uso: Drilldown (2.5/5.3) e profiles do Pyroscope (5.1) estão todos ativos
     ports:
       - "3000:3000"
     volumes:
