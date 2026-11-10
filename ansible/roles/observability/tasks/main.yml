@@ -18,6 +18,7 @@
     - loki
     - mimir
     - tempo
+    - pyroscope
     - grafana/provisioning/datasources
     - grafana/provisioning/dashboards
     - grafana/provisioning/alerting
@@ -55,6 +56,13 @@
     dest: "{{ observability_dir }}/mimir/mimir.yaml"
     mode: "0644"
   notify: Reiniciar Mimir
+
+- name: Gerar config do Pyroscope
+  ansible.builtin.template:
+    src: pyroscope/pyroscope.yaml.j2
+    dest: "{{ observability_dir }}/pyroscope/pyroscope.yaml"
+    mode: "0644"
+  notify: Reiniciar Pyroscope
 
 - name: Gerar config do Alloy
   ansible.builtin.template:

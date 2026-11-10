@@ -36,9 +36,12 @@ metrics_generator:
             attributes:
               - key: name
                 value: ".*/api/health.*"
+    local_blocks:
+      flush_to_storage: true
+  traces_storage:
+    path: /var/tempo/generator/traces
 
 overrides:
   defaults:
     metrics_generator:
-      processors: [service-graphs, span-metrics]
-      # task 5.3 (Drilldown) soma: local-blocks
+      processors: [service-graphs, span-metrics, local-blocks]
