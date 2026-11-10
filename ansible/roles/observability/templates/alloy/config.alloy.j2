@@ -5,7 +5,21 @@ loki.source.api "fluentbit" {
     listen_port    = 3500
   }
   use_incoming_timestamp = true
-  forward_to             = [loki.process.level.receiver, otelcol.receiver.loki.raw.receiver]
+  forward_to             = [loki.process.health.receiver, otelcol.receiver.loki.raw.receiver]
+}
+
+// Health checks (ALB e healthcheck do Docker) fora do Loki; o arquivo bruto no S3 continua com tudo.
+loki.process "health" {
+  forward_to = [loki.process.level.receiver]
+
+  // nginx dos nós app: /api/health
+  stage.drop {
+    expression = `"request_uri":"/api/health"`
+  }
+  // nginx do web: curl do healthcheck do Docker em / (o /health do ALB já tem access_log off)
+  stage.drop {
+    expression = `127\.0\.0\.1 - - \[[^\]]*\] .{1,2}GET / HTTP/1\.1.{1,2} 200 .*curl/`
+  }
 }
 
 // RDS e WAF: o leitor do CloudWatch envia para cá, já com as 4 labels (task 2.4).
@@ -25,7 +39,17 @@ loki.source.api "waf" {
     listen_port    = 3502
   }
   use_incoming_timestamp = true
-  forward_to             = [loki.process.level.receiver, otelcol.receiver.loki.raw_waf.receiver]
+  forward_to             = [loki.process.waf_grafana.receiver, otelcol.receiver.loki.raw_waf.receiver]
+}
+
+// Cada requisição ao Grafana (inclusive o próprio Live Tail) gera uma linha no WAF: fora do Loki.
+// Só ALLOW: um BLOCK no Grafana interessa. O arquivo bruto no S3 continua com tudo.
+loki.process "waf_grafana" {
+  forward_to = [loki.process.level.receiver]
+
+  stage.drop {
+    expression = `"action":"ALLOW".*"uri":"/grafana`
+  }
 }
 
 // Nível para as linhas sem campo level (nginx, WAF, RDS e texto do app), senão o Grafana mostra "unknown".
@@ -34,7 +58,7 @@ loki.process "level" {
   forward_to = [loki.write.default.receiver]
 
   stage.match {
-    selector = `{service=~"nginx|waf|rds"}`
+    selector = `{service=~"nginx|waf|rds|web"}`
     stage.template {
       source   = "level"
       template = "INFO"
@@ -56,6 +80,34 @@ loki.process "level" {
   }
   stage.match {
     selector = `{service="nginx"} |~ "\"status\":5[0-9][0-9]"`
+    stage.template {
+      source   = "level"
+      template = "ERROR"
+    }
+  }
+  stage.match {
+    selector = `{service="web"} |~ "HTTP/[0-9.]+.{1,2} 4[0-9][0-9] "`
+    stage.template {
+      source   = "level"
+      template = "WARN"
+    }
+  }
+  stage.match {
+    selector = `{service="web"} |~ "HTTP/[0-9.]+.{1,2} 5[0-9][0-9] "`
+    stage.template {
+      source   = "level"
+      template = "ERROR"
+    }
+  }
+  stage.match {
+    selector = `{service="web"} |= "[warn]"`
+    stage.template {
+      source   = "level"
+      template = "WARN"
+    }
+  }
+  stage.match {
+    selector = `{service="web"} |~ "\\[(error|crit|alert|emerg)\\]"`
     stage.template {
       source   = "level"
       template = "ERROR"
@@ -99,6 +151,50 @@ loki.process "level" {
 
   stage.structured_metadata {
     values = { level = "" }
+  }
+}
+
+faro.receiver "frontend" {
+  server {
+    listen_address           = "0.0.0.0"
+    listen_port              = 12347
+    max_allowed_payload_size = "1MiB"
+    rate_limiting {
+      rate       = 50
+      burst_size = 100
+    }
+  }
+  output {
+    logs   = [loki.process.faro.receiver]
+    traces = [otelcol.processor.batch.default.input]
+  }
+}
+
+loki.process "faro" {
+  stage.static_labels {
+    values = {
+      env     = "production",
+      origin  = "frontend",
+      service = "frontend",
+    }
+  }
+  stage.label_keep {
+    values = ["env", "origin", "service"]
+  }
+  forward_to = [loki.write.default.receiver]
+}
+
+pyroscope.receive_http "backends" {
+  http {
+    listen_address = "0.0.0.0"
+    listen_port    = 4040
+  }
+  forward_to = [pyroscope.write.default.receiver]
+}
+
+pyroscope.write "default" {
+  endpoint {
+    url = "http://pyroscope:4040"
   }
 }
 

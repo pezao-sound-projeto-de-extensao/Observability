@@ -6,7 +6,7 @@ resource "aws_lb_target_group" "grafana" {
   target_type = "instance"
 
   health_check {
-    path     = "/api/health"
+    path     = "/grafana/api/health"
     port     = "traffic-port"
     protocol = "HTTP"
     matcher  = "200"
@@ -19,14 +19,20 @@ resource "aws_lb_target_group_attachment" "grafana" {
   port             = 3000
 }
 
-resource "aws_lb_listener" "grafana" {
-  load_balancer_arn = data.aws_lb.main.arn
-  port              = 3000
-  protocol          = "HTTP"
+# Na porta 80, não num listener próprio: redes como a da faculdade bloqueiam portas fora do padrão
+resource "aws_lb_listener_rule" "grafana" {
+  listener_arn = data.aws_lb_listener.http.arn
+  priority     = 40
 
-  default_action {
+  action {
     type             = "forward"
     target_group_arn = aws_lb_target_group.grafana.arn
+  }
+
+  condition {
+    path_pattern {
+      values = ["/grafana", "/grafana/*"]
+    }
   }
 }
 
