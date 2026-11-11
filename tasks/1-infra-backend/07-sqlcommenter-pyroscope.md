@@ -4,14 +4,14 @@
 
 ## sqlcommenter: `trace_id` no slow query do RDS
 
-- [ ] `OTEL_INSTRUMENTATION_JDBC_EXPERIMENTAL_SQLCOMMENTER_ENABLED: "true"`.
-- [ ] Validar que o SQL sai com `/*traceparent='00-<trace_id>-<span_id>-01'*/` e que o comentário chega ao slow query log do RDS.
+- [x] `OTEL_INSTRUMENTATION_JDBC_EXPERIMENTAL_SQLCOMMENTER_ENABLED: "true"`.
+- [x] Validar que o SQL sai com `/*traceparent='00-<trace_id>-<span_id>-01'*/` e que o comentário chega ao slow query log do RDS.
 - [ ] Medir o impacto sob carga (k6 antes/depois). Esperado pequeno com `useServerPrepStmts=false` (padrão do Connector/J).
 
 ## Pyroscope: profiling contínuo com span profiles
 
-- [ ] Adicionar `pyroscope-otel-javaagent-extension.jar` em `/otel/` na imagem.
-- [ ] Variáveis:
+- [x] Adicionar `pyroscope-otel-javaagent-extension.jar` em `/otel/` na imagem.
+- [x] Variáveis:
   ```yaml
   OTEL_JAVAAGENT_EXTENSIONS: /otel/pyroscope-otel-javaagent-extension.jar
   OTEL_PYROSCOPE_START_PROFILING: "true"
@@ -34,5 +34,5 @@ Os dois são experimentais ou dependem de extensão: fixar versões do agente e 
 
 ## Pronto quando
 
-- Uma query lenta no RDS tem o `traceparent` no texto.
-- Profiles chegam ao Pyroscope (task 5.1) com `service_name=app`.
+- [x] Uma query lenta no RDS tem o `traceparent` no texto.
+- [x] Profiles chegam ao Pyroscope (task 5.1) com `service_name=app`.

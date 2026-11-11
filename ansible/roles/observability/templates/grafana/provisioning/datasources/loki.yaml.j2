@@ -19,6 +19,11 @@ datasources:
           matcherRegex: '\btrace(?:_id|ID)=(\w+)'
           datasourceUid: tempo
           url: '$${__value.raw}'
+        # sqlcommenter (task 1.7): traceparent no slow query log do RDS
+        - name: trace_id_sql
+          matcherRegex: "traceparent='00-(\\w{32})-"
+          datasourceUid: tempo
+          url: '$${__value.raw}'
 
   - name: Tempo
     type: tempo
