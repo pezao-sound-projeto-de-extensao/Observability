@@ -1,0 +1,96 @@
+{
+  "uid": "inicio",
+  "title": "Início",
+  "tags": ["inicio"],
+  "schemaVersion": 39,
+  "version": 1,
+  "editable": false,
+  "graphTooltip": 0,
+  "time": {
+    "from": "now-1h",
+    "to": "now"
+  },
+  "timezone": "browser",
+  "refresh": "",
+  "links": [
+    {
+      "title": "Logs",
+      "type": "link",
+      "icon": "doc",
+      "url": "/d/logs",
+      "tooltip": "Dashboard de logs, com os filtros prontos",
+      "targetBlank": false
+    },
+    {
+      "title": "Explore (Loki)",
+      "type": "link",
+      "icon": "doc",
+      "url": "/explore",
+      "tooltip": "Live Tail e consultas LogQL (Loki é a fonte padrão)",
+      "targetBlank": false
+    },
+    {
+      "title": "RED — Aplicação",
+      "type": "link",
+      "icon": "dashboard",
+      "url": "/d/red-overview",
+      "tooltip": "Rate, errors e duration da API, com exemplars",
+      "targetBlank": false
+    },
+    {
+      "title": "Saúde da observabilidade",
+      "type": "link",
+      "icon": "dashboard",
+      "url": "/d/saude-observabilidade",
+      "tooltip": "Ingestão, descarte e uso de memória/disco da stack",
+      "targetBlank": false
+    },
+    {
+      "title": "Logs Drilldown",
+      "type": "link",
+      "icon": "search",
+      "url": "/a/grafana-lokiexplore-app",
+      "tooltip": "Explorar logs sem escrever LogQL",
+      "targetBlank": false
+    },
+    {
+      "title": "Metrics Drilldown",
+      "type": "link",
+      "icon": "search",
+      "url": "/a/grafana-metricsdrilldown-app",
+      "tooltip": "Explorar métricas sem escrever PromQL",
+      "targetBlank": false
+    },
+    {
+      "title": "Traces Drilldown",
+      "type": "link",
+      "icon": "search",
+      "url": "/a/grafana-exploretraces-app",
+      "tooltip": "Explorar traces sem escrever TraceQL",
+      "targetBlank": false
+    },
+    {
+      "title": "Profiles Drilldown",
+      "type": "link",
+      "icon": "search",
+      "url": "/a/grafana-pyroscope-app",
+      "tooltip": "Profiling contínuo com o Pyroscope",
+      "targetBlank": false
+    }
+  ],
+  "panels": [
+    {
+      "id": 1,
+      "type": "text",
+      "title": "",
+      "gridPos": { "x": 0, "y": 0, "w": 24, "h": 11 },
+      "options": {
+        "mode": "markdown",
+        "content": "## Observabilidade\n\nUse os atalhos no topo desta página para navegar.\n\n- **Logs** — dashboard com os filtros prontos (`service`, `host`, `origin`, `level`).\n- **Explore (Loki)** — Live Tail e consultas LogQL; o Loki já é a fonte padrão.\n- **RED — Aplicação** — rate, errors e duration da API, com exemplars para o Tempo.\n- **Saúde da observabilidade** — ingestão, descarte e uso de memória/disco da stack.\n- **Drilldown** — Logs, Metrics, Traces e Profiles sem escrever LogQL/PromQL/TraceQL."
+      },
+      "fieldConfig": { "defaults": {}, "overrides": [] }
+    }
+  ],
+  "templating": { "list": [] },
+  "annotations": { "list": [] }
+}
