@@ -2,7 +2,6 @@ auth_enabled: false
 
 server:
   http_listen_port: 3100
-  # O padrão de 4 MB não comporta 5.000 linhas de WAF (~1,6 KB cada): a consulta dava 504 (task 2.4)
   grpc_server_max_recv_msg_size: 16777216
   grpc_server_max_send_msg_size: 16777216
 
@@ -23,7 +22,6 @@ schema_config:
         prefix: index_
         period: 24h
 
-# Sem chaves: as credenciais vêm do LabInstanceProfile
 storage_config:
   tsdb_shipper:
     active_index_directory: /loki/index

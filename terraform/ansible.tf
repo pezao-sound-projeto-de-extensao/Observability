@@ -11,12 +11,14 @@ resource "local_file" "ansible_inventory" {
 
 resource "local_file" "ansible_vars" {
   filename        = "${path.module}/../ansible/inventories/production/group_vars/observability.yml"
-  file_permission = "0644"
+  file_permission = "0600"
 
   content = yamlencode({
-    aws_region       = var.aws_region
-    grafana_root_url = "http://${data.aws_lb.main.dns_name}/grafana/"
-    buckets          = { for k, b in terraform_data.buckets : k => b.output }
+    aws_region             = var.aws_region
+    grafana_admin_password = var.grafana_admin_password
+    sns_topic_arn          = data.aws_sns_topic.alerts.arn
+    grafana_root_url       = "http://${data.aws_lb.main.dns_name}/grafana/"
+    buckets                = { for k, b in terraform_data.buckets : k => b.output }
   })
 }
 
@@ -39,10 +41,6 @@ resource "terraform_data" "configurando_observability" {
 
   provisioner "local-exec" {
     working_dir = "${path.module}/../ansible"
-    environment = {
-      GRAFANA_ADMIN_PASSWORD = var.grafana_admin_password
-      DISCORD_WEBHOOK_URL    = var.discord_webhook_url
-    }
     command     = "ANSIBLE_HOST_KEY_CHECKING=False ANSIBLE_ROLES_PATH=roles ansible-playbook -i inventories/production/hosts.ini playbook.yml"
   }
 }

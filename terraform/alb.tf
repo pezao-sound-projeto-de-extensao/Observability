@@ -19,7 +19,6 @@ resource "aws_lb_target_group_attachment" "grafana" {
   port             = 3000
 }
 
-# Na porta 80, não num listener próprio: redes como a da faculdade bloqueiam portas fora do padrão
 resource "aws_lb_listener_rule" "grafana" {
   listener_arn = data.aws_lb_listener.http.arn
   priority     = 40

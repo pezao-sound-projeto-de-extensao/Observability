@@ -1,4 +1,3 @@
-// Containers: Fluent Bit -> Alloy. As 4 labels já chegam prontas.
 loki.source.api "fluentbit" {
   http {
     listen_address = "0.0.0.0"
@@ -8,22 +7,23 @@ loki.source.api "fluentbit" {
   forward_to             = [loki.process.health.receiver, otelcol.receiver.loki.raw.receiver]
 }
 
-// Health checks (ALB e healthcheck do Docker) fora do Loki; o arquivo bruto no S3 continua com tudo.
 loki.process "health" {
   forward_to = [loki.process.level.receiver]
 
-  // nginx dos nós app: /api/health
   stage.drop {
     expression = `"request_uri":"/api/health"`
   }
-  // nginx do web: curl do healthcheck do Docker em / (o /health do ALB já tem access_log off)
   stage.drop {
     expression = `127\.0\.0\.1 - - \[[^\]]*\] .{1,2}GET / HTTP/1\.1.{1,2} 200 .*curl/`
   }
+  stage.drop {
+    expression = `"log":""[,}]`
+  }
+  stage.drop {
+    expression = `"upstream_status":"[1-4]`
+  }
 }
 
-// RDS e WAF: o leitor do CloudWatch envia para cá, já com as 4 labels (task 2.4).
-// Uma porta por origem para separar o arquivo bruto. Portas só na rede do Compose.
 loki.source.api "rds" {
   http {
     listen_address = "0.0.0.0"
@@ -42,18 +42,14 @@ loki.source.api "waf" {
   forward_to             = [loki.process.waf_grafana.receiver, otelcol.receiver.loki.raw_waf.receiver]
 }
 
-// Cada requisição ao Grafana (inclusive o próprio Live Tail) gera uma linha no WAF: fora do Loki.
-// Só ALLOW: um BLOCK no Grafana interessa. O arquivo bruto no S3 continua com tudo.
 loki.process "waf_grafana" {
   forward_to = [loki.process.level.receiver]
 
   stage.drop {
-    expression = `"action":"ALLOW".*"uri":"/grafana`
+    expression = `"action":"ALLOW"`
   }
 }
 
-// Nível para as linhas sem campo level (nginx, WAF, RDS e texto do app), senão o Grafana mostra "unknown".
-// Vai como structured metadata, não label (cardinalidade). Os match seguintes sobrescrevem o anterior.
 loki.process "level" {
   forward_to = [loki.write.default.receiver]
 
@@ -153,10 +149,8 @@ loki.process "level" {
     values = { level = "" }
   }
 
-  // trace_id do MDC (OTel Agent) vira structured metadata: o derived field "trace_id"
-  // do Grafana é por label, e sem isso o link para o Tempo só aparece com | json na query
   stage.match {
-    selector = `{service="app"} |= "\"trace_id\":"`
+    selector = `{service=~"app|nginx"} |= "\"trace_id\":"`
     stage.json {
       expressions = { trace_id = "" }
     }
@@ -213,7 +207,7 @@ pyroscope.write "default" {
 loki.write "default" {
   endpoint {
     url                 = "http://loki:3100/loki/api/v1/push"
-    max_backoff_retries = 0 // tenta indefinidamente enquanto o Loki reinicia
+    max_backoff_retries = 0
   }
 }
 
@@ -235,7 +229,6 @@ otelcol.receiver.loki "raw_waf" {
   }
 }
 
-// Arquivo bruto. O batch evita um objeto no S3 a cada push e fica fora do caminho do Live Tail.
 otelcol.processor.batch "raw_containers" {
   timeout = "60s"
   output {
@@ -291,6 +284,9 @@ otelcol.exporter.awss3 "waf" {
 }
 
 otelcol.receiver.otlp "default" {
+  grpc {
+    endpoint = "0.0.0.0:4317"
+  }
   http {
     endpoint = "0.0.0.0:4318"
   }
@@ -303,7 +299,10 @@ otelcol.receiver.otlp "default" {
 otelcol.processor.filter "healthcheck" {
   error_mode = "ignore"
   traces {
-    span = ["attributes[\"url.path\"] == \"/api/health\""]
+    span = [
+      "attributes[\"url.path\"] == \"/api/health\"",
+      "attributes[\"http.target\"] == \"/api/health\"",
+    ]
   }
   output {
     traces = [otelcol.processor.batch.default.input]
@@ -325,16 +324,9 @@ otelcol.exporter.otlphttp "tempo" {
   }
 }
 
-// =============================================================
-// TASK 4.1 + 4.3: métricas
-// =============================================================
-
-// Recebe as métricas OTLP do agente Java e converte para Prometheus
 otelcol.exporter.prometheus "mimir" {
   forward_to = [prometheus.remote_write.mimir.receiver]
 }
-
-// Ligado no output metrics do receiver "default": sem ele o /v1/metrics da 4318 dá 404
 
 prometheus.remote_write "mimir" {
   endpoint {
@@ -343,7 +335,6 @@ prometheus.remote_write "mimir" {
   }
 }
 
-// Self-monitoring: métricas do próprio Alloy
 prometheus.exporter.self "alloy" {}
 
 discovery.relabel "self" {
@@ -354,7 +345,6 @@ discovery.relabel "self" {
   }
 }
 
-// Self-monitoring: métricas do host (CPU, disco, memória da EC2)
 prometheus.exporter.unix "host" {
   procfs_path = "/host/proc"
   sysfs_path  = "/host/sys"
@@ -369,7 +359,6 @@ discovery.relabel "host" {
   }
 }
 
-// Scrape de todos os componentes da stack
 prometheus.scrape "stack" {
   scrape_interval = "30s"
   targets = array.concat(
@@ -379,15 +368,12 @@ prometheus.scrape "stack" {
       {"__address__" = "loki:3100",    "job" = "loki"},
       {"__address__" = "tempo:3200",   "job" = "tempo"},
       {"__address__" = "mimir:9009",   "job" = "mimir"},
-      // Subpath: /metrics dá 301 para o ALB, e o Alloy sairia pelo NAT (WAF bloqueia como US)
       {"__address__" = "grafana:3000", "job" = "grafana", "__metrics_path__" = "/grafana/metrics"},
-      // task 5.1 soma: {"__address__" = "pyroscope:4040", "job" = "pyroscope"},
     ],
   )
   forward_to = [prometheus.remote_write.mimir.receiver]
 }
 
-// Recebe as métricas do Fluent Bit (task 1.4, porta 9999)
 prometheus.receive_http "fluentbit" {
   http {
     listen_address = "0.0.0.0"

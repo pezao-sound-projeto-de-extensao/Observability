@@ -6,7 +6,6 @@ server:
   http_listen_port: 9009
   log_level: info
 
-# Credenciais via LabInstanceProfile (sem chaves explícitas)
 common:
   storage:
     backend: s3
@@ -15,7 +14,6 @@ common:
       region: {{ aws_region }}
       bucket_name: {{ buckets['mimir-metrics'] }}
 
-# Prefixos distintos por exigência do Mimir
 blocks_storage:
   storage_prefix: blocks
   tsdb:

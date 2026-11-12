@@ -4,7 +4,6 @@
       - grafana_admin_password | length > 0
       - "\"'\" not in grafana_admin_password"
     fail_msg: Defina GRAFANA_ADMIN_PASSWORD no ambiente, sem aspas simples.
-  no_log: true
 
 - name: Criar pastas da stack
   ansible.builtin.file:
@@ -34,7 +33,6 @@
     src: env.j2
     dest: "{{ observability_dir }}/.env"
     mode: "0600"
-  no_log: true
 
 - name: Gerar config do Loki
   ansible.builtin.template:
@@ -87,7 +85,6 @@
     - Dockerfile
     - reader.py
 
-# Sempre roda: usa o cache se nada mudou, e o compose up só recria o container se a imagem mudar
 - name: Gerar imagem do leitor do CloudWatch
   ansible.builtin.command:
     cmd: docker build -t cloudwatch-reader:local .
@@ -110,8 +107,6 @@
     mode: "0644"
   notify: Reiniciar Grafana
 
-# copy, não template: o {{ }} do line_format e das legendas não é Jinja.
-# Sem restart: o provider relê os JSONs sozinho a cada 10 s
 - name: Copiar dashboards do Grafana
   ansible.builtin.copy:
     src: grafana/provisioning/dashboards/
@@ -126,22 +121,12 @@
     mode: "0644"
   notify: Reiniciar Grafana
 
-# Sem webhook o Grafana nem sobe (contact point sem url); os alertas caem na policy padrão
-- name: Copiar contact point e policy do Discord
+- name: Copiar contact point (SNS) e policy
   ansible.builtin.copy:
     src: grafana/provisioning/alerting/{{ item }}
     dest: "{{ observability_dir }}/grafana/provisioning/alerting/{{ item }}"
     mode: "0644"
   loop: [contact-points.yaml, policies.yaml]
-  when: discord_webhook_url | length > 0
-  notify: Reiniciar Grafana
-
-- name: Remover contact point e policy do Discord sem webhook
-  ansible.builtin.file:
-    path: "{{ observability_dir }}/grafana/provisioning/alerting/{{ item }}"
-    state: absent
-  loop: [contact-points.yaml, policies.yaml]
-  when: discord_webhook_url | length == 0
   notify: Reiniciar Grafana
 
 - name: Subir a stack

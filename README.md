@@ -507,7 +507,9 @@ Log de erro no Loki (host=app-1-a → EC2 app-1, AZ a; container_name → répli
 
 Para ver só os logs de uma réplica: `{service="app", host="app-1-a"} | json | container_name=~"/stockflow_app\\.2\\..*"`.
 
-**Escopo:** só os logs do `app` gerados dentro de uma requisição (ou de um span manual) têm `trace_id`. RDS, WAF, nginx e RabbitMQ não são instrumentados, e logs de startup ou de jobs fora de um span também ficam sem ele. Para esses, a correlação é por horário (e por `host`, no caso de nginx e RabbitMQ).
+**Escopo:** os logs do `app` gerados dentro de uma requisição (ou de um span manual) e o access log do nginx (`ngx_otel_module`, que inicia o trace e propaga o `traceparent` ao `app`) têm `trace_id`. RDS, WAF e RabbitMQ não são instrumentados, e logs de startup ou de jobs fora de um span também ficam sem ele. Para esses, a correlação é por horário (e por `host`, no caso do RabbitMQ).
+
+**Uma linha por requisição no Loki:** o log `eventos` do `app` já traz método, rota, status, IP, duração e erro. O Alloy descarta o access log do nginx quando o `app` respondeu (`upstream_status` 1xx a 4xx) e o WAF `ALLOW`; ficam o nginx que respondeu sozinho ou com 5xx (413, 502, 504) e o WAF `BLOCK`. O arquivo bruto no S3 guarda tudo.
 
 ---
 
@@ -1013,7 +1015,7 @@ Elas seguem o mesmo caminho dos spans (backend → Alloy), e o Alloy repassa ao 
 **2. Métricas derivadas das traces (metrics-generator do Tempo).** O Tempo calcula métricas a partir dos spans que recebe e grava no Mimir:
 
 - **Span metrics (RED):** taxa (*Rate*), erros (*Errors*) e duração (*Duration*) por endpoint, em `traces_spanmetrics_calls_total` e `traces_spanmetrics_latency_bucket`.
-- **Service graph:** um mapa de quem chama quem, com taxa e erro em cada aresta, em `traces_service_graph_request_total`. Bancos e filas não instrumentados aparecem como **nós virtuais** a partir dos atributos dos spans (`db.system`, `messaging.system`), então o grafo mostra `app → mysql` e `app → rabbitmq`. O nginx não é instrumentado e não aparece.
+- **Service graph:** um mapa de quem chama quem, com taxa e erro em cada aresta, em `traces_service_graph_request_total`. Bancos e filas não instrumentados aparecem como **nós virtuais** a partir dos atributos dos spans (`db.system`, `messaging.system`), então o grafo mostra `app → mysql` e `app → rabbitmq`. O nginx aparece como `nginx → app`.
 
 Como o Alloy já descarta os spans de `/api/health` antes do Tempo, as métricas RED já saem sem o ruído do health check. As métricas do agente (`http_server_request_duration_seconds`) incluem o health check; nas consultas, filtrar com `http_route!="/api/health"`.
 
@@ -1332,7 +1334,7 @@ prometheus.receive_http "fluentbit" {
 
 Liberar a porta `9999` no security group para as EC2 de app (seção 6.3).
 
-**Alertas** (Grafana Alerting, provisionado por arquivo em `provisioning/alerting/`, contact point por webhook do Discord ou Telegram, sem SNS):
+**Alertas** (Grafana Alerting, provisionado por arquivo em `provisioning/alerting/`, contact point no SNS `alb-healthy-hosts-alerts` do DevOps, que envia por email):
 
 | Alerta | Consulta | Significado |
 |---|---|---|
@@ -1341,6 +1343,7 @@ Liberar a porta `9999` no security group para as EC2 de app (seção 6.3).
 | Descarte no Alloy | `increase(loki_write_dropped_bytes_total[5m]) > 0` | Logs perdidos entre Alloy e Loki |
 | Disco da EC2 | `node_filesystem_avail_bytes{mountpoint="/host/root"} / node_filesystem_size_bytes < 0.15` | WAL e TSDB podem encher o EBS |
 | Memória perto do limite | `process_resident_memory_bytes{job=~"loki|tempo|mimir"}` acima de 85% do `mem_limit` do container | Um componente perto do OOM |
+| Requisição lenta | p95 de 5 min por `http_route` > 2x o p95 da hora anterior e > 200 ms, por 5 min | Rota da API fora do normal |
 
 Conferir os nomes das métricas do `fluentbit_metrics` na versão 3.2 antes de criar os alertas.
 
