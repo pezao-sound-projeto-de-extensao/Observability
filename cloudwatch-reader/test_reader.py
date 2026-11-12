@@ -72,7 +72,6 @@ class ReaderTest(unittest.TestCase):
     def test_evento_atrasado_e_lido_no_ciclo_seguinte(self):
         group = make_group()
         self.run_cycle([group], 100 * MIN)
-        # Horário anterior ao fim do ciclo passado, mas só chegou ao CloudWatch agora
         self.logs.add("waf", "late", 100 * MIN - 30_000)
         self.run_cycle([group], 100 * MIN + 15_000)
         self.assertEqual(self.sink.lines, ["late"])

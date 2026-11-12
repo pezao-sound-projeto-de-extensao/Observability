@@ -36,12 +36,4 @@ variable "grafana_admin_password" {
   description = "Senha do admin do Grafana (sem aspas simples)"
   type        = string
   default     = "admin123"
-  sensitive   = true
-}
-
-variable "discord_webhook_url" {
-  description = "Webhook do Discord para os alertas do Grafana (vazio = sem contact point)"
-  type        = string
-  default     = ""
-  sensitive   = true
 }

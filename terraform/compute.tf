@@ -2,6 +2,7 @@ locals {
   ingress = {
     3000  = [data.aws_security_group.lb.id]
     3500  = [data.aws_security_group.app.id, data.aws_security_group.web.id]
+    4317  = [data.aws_security_group.app.id]
     4318  = [data.aws_security_group.app.id]
     4040  = [data.aws_security_group.app.id]
     9999  = [data.aws_security_group.app.id, data.aws_security_group.web.id]

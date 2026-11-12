@@ -1,9 +1,17 @@
 apiVersion: 1
 contactPoints:
   - orgId: 1
-    name: webhook-discord
+    name: sns-email
     receivers:
-      - uid: webhook-discord
-        type: discord
+      - uid: sns-email
+        type: sns
         settings:
-          url: ${DISCORD_WEBHOOK_URL}
+          topic_arn: ${SNS_TOPIC_ARN}
+          sigv4:
+            region: ${AWS_REGION}
+          subject: '[{{ .Status | toUpper }}] {{ .CommonLabels.alertname }}'
+          message: |
+            {{ range .Alerts }}{{ .Annotations.summary }}
+            Início: {{ .StartsAt.Format "02/01 15:04" }} UTC
+            {{ .GeneratorURL }}
+            {{ end }}

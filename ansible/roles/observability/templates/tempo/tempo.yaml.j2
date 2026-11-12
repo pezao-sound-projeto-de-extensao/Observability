@@ -32,7 +32,7 @@ metrics_generator:
     span_metrics:
       filter_policies:
         - exclude:
-            match_type: regex # "regular" é inválido (só strict|regex): o generator recusava todos os spans
+            match_type: regex
             attributes:
               - key: name
                 value: ".*/api/health.*"

@@ -59,3 +59,7 @@ data "aws_lb_listener" "http" {
   load_balancer_arn = data.aws_lb.main.arn
   port              = 80
 }
+
+data "aws_sns_topic" "alerts" {
+  name = "alb-healthy-hosts-alerts"
+}

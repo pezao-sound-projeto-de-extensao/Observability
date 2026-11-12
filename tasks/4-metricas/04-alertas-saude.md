@@ -5,7 +5,7 @@
 ## O que fazer
 
 ### F3: saúde do pipeline
-- [ ] Contact point por webhook (Discord ou Telegram), sem SNS.
+- [ ] Contact point no SNS `alb-healthy-hosts-alerts` do DevOps (email).
 - [ ] Alertas:
 
   | Alerta | Consulta |
@@ -30,7 +30,7 @@ Os alertas disparam quando o lab é parado: silenciar no fim de cada sessão.
 
 ## Pronto quando
 
-Parar o Loki por 5 min dispara o alerta "Componente fora do ar" no webhook.
+Parar o Loki por 5 min dispara o alerta "Componente fora do ar" por email.
 
 ## Métricas do Fluent Bit 3.2 (levantadas na task 1.4, 2026-10-28)
 

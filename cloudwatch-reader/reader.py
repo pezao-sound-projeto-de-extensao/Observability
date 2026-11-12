@@ -120,7 +120,6 @@ def main():
     with open(os.environ.get("READER_CONFIG", "/etc/cloudwatch-reader/config.json"), encoding="utf-8") as f:
         config = json.load(f)
 
-    # adaptive: o FilterLogEvents tem cota baixa por conta, e o throttling espera em vez de falhar
     client = boto3.client(
         "logs",
         region_name=config["region"],

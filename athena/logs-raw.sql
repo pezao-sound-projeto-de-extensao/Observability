@@ -1,7 +1,3 @@
--- Tabelas do arquivo bruto (bucket logs-raw). Trocar <ACCOUNT_ID> pelo ID da conta.
--- Sempre filtrar por year/month/day nas consultas: a projeção de partições evita MSCK REPAIR, não o custo do scan.
--- RDS e WAF: o que o leitor reenviar depois de uma queda aparece repetido (task 2.4). Se a duplicata importar, use SELECT DISTINCT.
-
 CREATE EXTERNAL TABLE IF NOT EXISTS logs_raw_containers (
   env string,
   origin string,
@@ -69,7 +65,6 @@ TBLPROPERTIES (
   'storage.location.template' = 's3://logs-raw-<ACCOUNT_ID>/origin=waf-logs/year=${year}/month=${month}/day=${day}/hour=${hour}/minute=${minute}'
 );
 
--- RDS é texto: uma coluna com a linha inteira
 CREATE EXTERNAL TABLE IF NOT EXISTS logs_raw_rds (
   line string
 )

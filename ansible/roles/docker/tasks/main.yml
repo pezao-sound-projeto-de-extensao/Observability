@@ -9,7 +9,6 @@
     state: directory
     mode: "0755"
 
-# O dnf do Amazon Linux não traz o plugin Compose
 - name: Instalar plugin Compose
   ansible.builtin.get_url:
     url: "https://github.com/docker/compose/releases/download/{{ compose_version }}/docker-compose-linux-x86_64"

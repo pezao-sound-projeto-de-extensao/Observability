@@ -3,7 +3,6 @@
   become: true
   gather_facts: false
   pre_tasks:
-    # instância recém-criada: sshd ainda pode não estar pronto
     - ansible.builtin.wait_for_connection:
         timeout: 300
     - ansible.builtin.setup:

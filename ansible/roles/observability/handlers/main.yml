@@ -1,4 +1,3 @@
-# /-/reload em vez de restart: um restart do Alloy interrompe todos os sinais
 - name: Recarregar Alloy
   ansible.builtin.uri:
     url: http://localhost:12345/-/reload
